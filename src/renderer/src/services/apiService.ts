@@ -1,0 +1,44 @@
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
+
+export interface IApiService {
+  get<T, P = Record<string, unknown>>(url: string, params?: P): Promise<T>
+  post<T, D = unknown>(url: string, data?: D): Promise<T>
+  put<T, D = unknown>(url: string, data?: D): Promise<T>
+  delete<T>(url: string): Promise<T>
+}
+
+export class ApiService implements IApiService {
+  private axiosInstance: AxiosInstance
+
+  constructor(config: AxiosRequestConfig) {
+    this.axiosInstance = axios.create(config)
+
+    this.setupInterceptors()
+  }
+
+  private setupInterceptors(): void {
+    this.axiosInstance.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        console.error('API Error:', error)
+        return Promise.reject(error)
+      }
+    )
+  }
+
+  public get<T, P = Record<string, unknown>>(url: string, params?: P): Promise<T> {
+    return this.axiosInstance.get(url, { params }).then((res) => res.data)
+  }
+
+  public post<T, D = unknown>(url: string, data?: D): Promise<T> {
+    return this.axiosInstance.post(url, data).then((res) => res.data)
+  }
+
+  public put<T, D = unknown>(url: string, data?: D): Promise<T> {
+    return this.axiosInstance.put(url, data).then((res) => res.data)
+  }
+
+  public delete<T>(url: string): Promise<T> {
+    return this.axiosInstance.delete(url).then((res) => res.data)
+  }
+}
