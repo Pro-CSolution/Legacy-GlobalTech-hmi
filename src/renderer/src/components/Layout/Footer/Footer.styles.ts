@@ -12,10 +12,10 @@ export const FooterContainer = styled.footer`
   z-index: 50;
 `
 
-export const NavButton = styled.button<{ active?: boolean }>`
-  background: ${({ active, theme }) =>
-    active ? theme.colors.accent.primary : theme.colors.background.secondary};
-  color: ${({ active, theme }) => (active ? '#fff' : theme.colors.text.secondary)};
+export const NavButton = styled.button<{ $active?: boolean }>`
+  background: ${({ $active, theme }) =>
+    $active ? theme.colors.accent.primary : theme.colors.background.secondary};
+  color: ${({ $active, theme }) => ($active ? '#fff' : theme.colors.text.secondary)};
   border: none;
   border-radius: ${({ theme }) => theme.borderRadius.md};
   display: flex;
@@ -25,13 +25,13 @@ export const NavButton = styled.button<{ active?: boolean }>`
   gap: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: ${({ active, theme }) =>
-    active ? `0 0 15px ${theme.colors.accent.primary}66` : 'none'};
+  box-shadow: ${({ $active, theme }) =>
+    $active ? `0 0 15px ${theme.colors.accent.primary}66` : 'none'};
 
   &:hover {
-    background: ${({ active, theme }) =>
-      active ? theme.colors.accent.primary : theme.colors.background.tertiary};
-    color: ${({ active, theme }) => (active ? '#fff' : theme.colors.text.primary)};
+    background: ${({ $active, theme }) =>
+      $active ? theme.colors.accent.primary : theme.colors.background.tertiary};
+    color: ${({ $active, theme }) => ($active ? '#fff' : theme.colors.text.primary)};
   }
 `
 

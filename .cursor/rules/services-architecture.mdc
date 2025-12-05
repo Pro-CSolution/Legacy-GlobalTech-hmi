@@ -1,0 +1,56 @@
+---
+description: Arquitectura de servicios, API y Sockets siguiendo principios SOLID
+globs: src/renderer/src/services/**/*, src/renderer/src/config/**/*
+alwaysApply: true
+---
+
+# Services & Architecture (SOLID)
+
+## Principios Generales
+Los servicios deben ser clases que sigan el **Principio de Responsabilidad Única** y **Open/Closed**. Deben ser configurables mediante inyección de dependencias en el constructor.
+
+## Estructura de Servicios
+
+### 1. Interfaz
+Define siempre una interfaz para el servicio.
+
+```typescript
+export interface IMyService {
+  getData(): Promise<void>;
+}
+```
+
+### 2. Implementación Clase
+La clase no debe contener configuraciones hardcodeadas (URLs, Timeouts, Keys).
+
+```typescript
+export class MyService implements IMyService {
+  private config: ServiceConfig;
+
+  constructor(config: ServiceConfig) {
+    this.config = config;
+  }
+  // ...
+}
+```
+
+### 3. Instanciación (Singleton)
+En `src/renderer/src/services/index.ts`, importa la configuración de `src/renderer/src/config/app.config.ts` e instancia el servicio.
+
+```typescript
+import { API_CONFIG } from '../config/app.config';
+import { ApiService } from './apiService';
+
+export const apiService = new ApiService({
+  baseURL: API_CONFIG.BASE_URL,
+  // ...
+});
+```
+
+## Configuración
+- Todas las constantes de configuración (URLs, Timeouts, Headers) deben residir en `src/renderer/src/config/app.config.ts`.
+- Usa `import.meta.env` para valores que dependen del entorno.
+
+## API & Sockets
+- **ApiService**: Wrapper de Axios. Maneja interceptores y métodos HTTP genéricos. Tipado estricto con Generics (`get<T>`).
+- **SocketService**: Wrapper de Socket.io. Maneja conexión, desconexión y eventos.

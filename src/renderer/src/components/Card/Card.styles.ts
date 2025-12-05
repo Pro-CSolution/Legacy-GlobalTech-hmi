@@ -1,7 +1,9 @@
 import styled from 'styled-components'
-import { getPositionStyles, PositionProps } from '../../styles/mixins'
+import { getPositionStyles, PositionProps, shouldForwardPositionProp } from 'styles/mixins'
 
-export const CardContainer = styled.div<{ active: boolean } & PositionProps>`
+export const CardContainer = styled.div.withConfig({
+  shouldForwardProp: (prop) => shouldForwardPositionProp(prop) && prop !== 'active'
+})<{ active: boolean } & PositionProps>`
   background: ${({ theme }) => theme.colors.background.secondary}99; /* /60 opacity equivalent */
   backdrop-filter: blur(12px);
   border: 1px solid ${({ theme }) => theme.colors.borders.primary}99;

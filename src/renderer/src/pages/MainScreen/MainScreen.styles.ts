@@ -159,14 +159,15 @@ export const DriveLabel = styled.span`
   color: ${({ theme }) => theme.colors.text.secondary};
 `
 
-export const DriveState = styled.span<{ active: boolean }>`
+export const DriveState = styled.span<{ $active: boolean }>`
   font-size: ${({ theme }) => theme.typography.sizes.lg};
   font-weight: bold;
   padding: 2px 8px;
   border-radius: 4px;
-  background: ${({ active, theme }) =>
-    active ? theme.colors.status.running : theme.colors.background.tertiary};
-  color: ${({ active, theme }) => (active ? theme.colors.text.inverse : theme.colors.text.primary)};
+  background: ${({ $active, theme }) =>
+    $active ? theme.colors.status.running : theme.colors.background.tertiary};
+  color: ${({ $active, theme }) =>
+    $active ? theme.colors.text.inverse : theme.colors.text.primary};
 `
 
 export const DriveFaultBox = styled.div`

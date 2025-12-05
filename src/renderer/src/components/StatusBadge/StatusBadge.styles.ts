@@ -1,5 +1,6 @@
 import styled, { css, keyframes } from 'styled-components'
-import { getPositionStyles, PositionProps } from '../../styles/mixins'
+import { getPositionStyles, PositionProps, shouldForwardPositionProp } from 'styles/mixins'
+import { Theme } from 'styles/theme'
 
 export const pulse = keyframes`
   0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
@@ -7,7 +8,7 @@ export const pulse = keyframes`
   100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
 `
 
-export const getStatusStyles = (status: string, theme: any) => {
+export const getStatusStyles = (status: string, theme: Theme) => {
   const s = status.toLowerCase()
 
   if (['on', 'ok', 'local', 'closed', 'running'].includes(s)) {
@@ -45,7 +46,9 @@ export const getStatusStyles = (status: string, theme: any) => {
   `
 }
 
-export const Container = styled.div<PositionProps>`
+export const Container = styled.div.withConfig({
+  shouldForwardProp: (prop) => shouldForwardPositionProp(prop)
+})<PositionProps>`
   display: flex;
   flex-direction: column;
   margin-bottom: 8px;
@@ -62,7 +65,9 @@ export const Label = styled.span`
   margin-left: 4px;
 `
 
-export const Badge = styled.div<{ status: string }>`
+export const Badge = styled.div.withConfig({
+  shouldForwardProp: (prop) => prop !== 'status'
+})<{ status: string }>`
   display: flex;
   align-items: center;
   justify-content: space-between;

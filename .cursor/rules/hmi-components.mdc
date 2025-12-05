@@ -1,0 +1,43 @@
+---
+description: Patrones para componentes HMI, escalado y layout 16:10
+globs: src/renderer/src/components/**/*, src/renderer/src/pages/**/*, src/renderer/src/layouts/**/*
+alwaysApply: true
+---
+
+# HMI Component & Layout Patterns
+
+## Scaling Engine (16:10)
+La aplicación utiliza un patrón de escalado por Canvas virtual para mantener una relación de aspecto fija de **16:10** en cualquier pantalla.
+
+- **Base Resolution**: 1920x1200 (Definido en `src/renderer/src/config/constants.ts`).
+- **Componente Core**: `HMIContainer` maneja el escalado usando `transform: scale()`.
+- **Hook**: `useAspectScale` calcula el factor de escala basado en el tamaño de la ventana.
+
+### Uso en Pantallas
+Todas las pantallas principales deben estar envueltas en `ScreenLayout`, que a su vez implementa `HMIContainer`.
+
+```tsx
+import { ScreenLayout } from '../../layouts';
+
+const MyScreen = () => (
+  <ScreenLayout>
+    {/* Contenido posicionado absolutamente */}
+  </ScreenLayout>
+);
+```
+
+## Posicionamiento Absoluto
+Dentro del `HMIContainer` (o `ContentArea` de una pantalla), los elementos deben usar **posicionamiento absoluto** (`position: absolute`) con coordenadas basadas en la resolución base (1920x1200).
+
+- Esto garantiza que el diseño se mantenga pixel-perfect al escalar.
+- Evita layouts fluidos (flex/grid) para la estructura principal de la pantalla HMI, úsalos solo dentro de componentes pequeños o tarjetas.
+
+## Constantes de Configuración
+Nunca uses "magic numbers" para dimensiones críticas. Importa la configuración:
+
+```typescript
+import { HMI_CONFIG } from '../../config/constants';
+
+// Uso
+const width = HMI_CONFIG.SCREEN.BASE_WIDTH;
+```

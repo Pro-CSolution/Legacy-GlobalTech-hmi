@@ -1,0 +1,60 @@
+---
+description: Guía de estilos, tema Industrial Moderno y uso de styled-components
+globs: **/*.tsx, **/*.ts, **/*.styles.ts
+alwaysApply: true
+---
+
+# Styling & Theme Guidelines
+
+## Tecnología
+Utilizamos **styled-components** para todos los estilos. Evita CSS plano o módulos CSS a menos que sea estrictamente necesario.
+
+## Tema "Modern Industrial"
+El diseño debe reflejar una estética industrial moderna, elegante y minimalista.
+
+### Paleta de Colores (Referencia `src/renderer/src/styles/theme.ts`)
+Siempre usa las variables del tema, nunca hardcodees colores hexadecimales.
+
+- **Fondos**:
+  - `theme.colors.background.primary` (#111927): Fondo principal del lienzo (Deep Blue/Grey).
+  - `theme.colors.background.secondary` (#1e293b): Fondo de componentes/paneles.
+  - `theme.colors.background.tertiary` (#334155): Tarjetas y modales.
+
+- **Texto**:
+  - `theme.colors.text.primary` (#f8fafc): Énfasis alto.
+  - `theme.colors.text.secondary` (#94a3b8): Énfasis medio (etiquetas, info secundaria).
+
+- **Acentos y Estado**:
+  - **Cyan** (`theme.colors.accent.primary`): Color principal de acento para interacción y bordes activos.
+  - **Emerald** (`theme.colors.status.running`): Para estados positivos/running.
+  - **Red** (`theme.colors.status.stopped`/`alarm`): Para errores o paradas.
+  - **Amber** (`theme.colors.status.warning`): Para advertencias.
+
+### Tipografía
+- Familia: `'Inter', 'Roboto', sans-serif`.
+- Usa `theme.typography.sizes` y `theme.typography.weights`.
+
+## Patrones de Styled Components
+
+### 1. Archivos Separados
+Los estilos deben vivir en `ComponentName.styles.ts`.
+
+```typescript
+// ComponentName.styles.ts
+import styled from 'styled-components';
+
+export const Container = styled.div`
+  background: ${({ theme }) => theme.colors.background.secondary};
+  /* ... */
+`;
+```
+
+### 2. Acceso al Tema
+Usa siempre la función de interpolación para acceder al tema.
+✅ `color: ${({ theme }) => theme.colors.text.primary};`
+❌ `color: #f8fafc;`
+
+### 3. Efectos Visuales
+- Usa **Glassmorphism** sutil o gradientes suaves para dar profundidad (`theme.colors.gradients.card`).
+- Sombras definidas en `theme.shadows`.
+- Bordes finos y nítidos (`1px solid ${({ theme }) => theme.colors.borders.primary}`).

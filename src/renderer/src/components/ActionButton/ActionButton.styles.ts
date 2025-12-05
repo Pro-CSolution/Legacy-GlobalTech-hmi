@@ -1,5 +1,5 @@
 import styled, { css, RuleSet } from 'styled-components'
-import { getPositionStyles, PositionProps } from 'styles/mixins'
+import { getPositionStyles, PositionProps, shouldForwardPositionProp } from 'styles/mixins'
 import { Theme } from 'styles/theme'
 
 export const getButtonStyles = (color: string, active: boolean, theme: Theme): RuleSet<object> => {
@@ -57,7 +57,12 @@ export const getButtonStyles = (color: string, active: boolean, theme: Theme): R
   `
 }
 
-export const Button = styled.button<{ color: string; active: boolean } & PositionProps>`
+const shouldForwardButtonProp = (prop: string): boolean =>
+  shouldForwardPositionProp(prop) && prop !== 'color' && prop !== 'active'
+
+export const Button = styled.button.withConfig({
+  shouldForwardProp: (prop) => shouldForwardButtonProp(prop)
+})<{ color: string; active: boolean } & PositionProps>`
   position: relative;
   width: 100%;
   padding: 12px 16px;

@@ -20,6 +20,15 @@ $ npm install
 $ npm run dev
 ```
 
+### Generar tipos (deviceId y parameterId)
+
+```bash
+$ npm run generate:types
+```
+
+Usa `config/devices.yaml` y `parameters.json` del backend para crear `src/renderer/src/types/generated/devices.ts`.
+Puedes parametrizar la ruta del backend con `VITE_BACKEND_ROOT` (default: `../GlobalTech-Backend`).
+
 ### Build
 
 ```bash

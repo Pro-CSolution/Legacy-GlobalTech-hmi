@@ -1,0 +1,36 @@
+---
+description: Estructura del proyecto y convenciones de nombres para GlobalTech HMI
+globs: src/**/*
+alwaysApply: true
+---
+
+# Project Structure & Naming Conventions
+
+## Root Directory
+Todo el código fuente del renderer vive en `src/renderer/src`.
+
+## Folder Structure
+- `assets/`: Imágenes, fuentes e iconos estáticos.
+- `components/`: Componentes UI reutilizables.
+  - Cada componente debe tener su propia carpeta: `ComponentName/`.
+  - Archivos: `ComponentName.tsx`, `ComponentName.styles.ts`, `index.ts`.
+- `config/`: Constantes y configuraciones de la aplicación (API, Sockets, UI Constants).
+- `contexts/`: Contextos de React (Theme, Auth, Data).
+- `hooks/`: Custom hooks (e.g., `useAspectScale`).
+- `layouts/`: Wrappers de diseño (e.g., `ScreenLayout`).
+- `pages/`: Pantallas completas de la aplicación (e.g., `MainScreen`).
+- `routes/`: Configuración de rutas y Router.
+- `services/`: Lógica de negocio y comunicación externa (API, Socket).
+- `styles/`: Definiciones globales de estilo y tema (`theme.ts`, `GlobalStyles.ts`).
+- `types/`: Interfaces y tipos TypeScript compartidos.
+
+## Naming Conventions
+- **Componentes**: PascalCase (e.g., `HMIContainer`, `MainScreen`).
+- **Hooks**: camelCase con prefijo `use` (e.g., `useAspectScale`).
+- **Servicios**: camelCase para instancias, PascalCase para clases (e.g., `apiService`, `ApiService`).
+- **Archivos de Estilo**: `ComponentName.styles.ts`.
+- **Directorios**: PascalCase para componentes/páginas, camelCase para utilidades/hooks.
+
+## Imports
+- Utiliza imports absolutos o alias configurados cuando sea posible para mantener limpieza.
+- Exporta componentes y servicios desde un archivo `index.ts` en su respectiva carpeta (Barrel pattern).

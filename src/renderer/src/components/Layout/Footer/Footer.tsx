@@ -14,22 +14,22 @@ const Footer: React.FC = () => {
 
   return (
     <FooterContainer>
-      <NavButton active={currentPath === '/'} onClick={() => navigate('/')}>
+      <NavButton $active={currentPath === '/'} onClick={() => navigate('/')}>
         <LayoutDashboard size={iconsSize} />
         <Label>MAIN</Label>
       </NavButton>
 
-      <NavButton active={currentPath === '/temps'} onClick={() => navigate('/temps')}>
+      <NavButton $active={currentPath === '/temps'} onClick={() => navigate('/temps')}>
         <Thermometer size={iconsSize} />
         <Label>TEMPERATURES</Label>
       </NavButton>
 
-      <NavButton active={currentPath === '/coolant'} onClick={() => navigate('/coolant')}>
+      <NavButton $active={currentPath === '/coolant'} onClick={() => navigate('/coolant')}>
         <Wind size={iconsSize} />
         <Label>COOLING</Label>
       </NavButton>
 
-      <NavButton active={currentPath === '/trends'} onClick={() => navigate('/trends')}>
+      <NavButton $active={currentPath === '/trends'} onClick={() => navigate('/trends')}>
         <LineChart size={iconsSize} />
         <Label>TRENDS 1</Label>
       </NavButton>

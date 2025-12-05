@@ -1,10 +1,10 @@
-import React from 'react'
 import { Zap } from 'lucide-react'
 import Card from 'components/Card'
 import DigitalDisplay from 'components/DigitalDisplay'
 import Panel from 'components/Panel'
 import { ElectricalGrid, TrendPlaceholder, TrendLabel, TrendStatus } from '../MainScreen.styles'
 import { PositionProps } from 'styles/mixins'
+import { FC } from 'react'
 
 interface ElectricalParamsProps extends PositionProps {
   electrical: {
@@ -16,7 +16,7 @@ interface ElectricalParamsProps extends PositionProps {
   }
 }
 
-export const ElectricalParams: React.FC<ElectricalParamsProps> = ({
+export const ElectricalParams: FC<ElectricalParamsProps> = ({
   electrical,
   ...positionProps
 }) => {

@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ValidationError } from './ValidationError'
-export type HTTPValidationError = {
-  detail?: Array<ValidationError>
+export type ParameterSubscriptionPayload = {
+  device_id: string
+  param_id: string
 }

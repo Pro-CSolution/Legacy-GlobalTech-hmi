@@ -44,6 +44,9 @@ const getVariantStyles = (variant: TrendChartVariant): ReturnType<typeof css> =>
 
 // === Container Props ===
 
+const shouldForwardContainerProp = (prop: string): boolean =>
+  !['variant', 'width', 'height', 'position', 'backgroundColor', 'borderColor'].includes(prop)
+
 interface ContainerProps {
   variant: TrendChartVariant
   width?: string | number
@@ -53,7 +56,9 @@ interface ContainerProps {
   borderColor?: string
 }
 
-export const Container = styled.div<ContainerProps>`
+export const Container = styled.div.withConfig({
+  shouldForwardProp: (prop) => shouldForwardContainerProp(prop)
+})<ContainerProps>`
   position: absolute;
   display: flex;
   flex-direction: column;
@@ -97,7 +102,11 @@ interface TitleBarProps {
   variant: TrendChartVariant
 }
 
-export const TitleBar = styled.div<TitleBarProps>`
+const shouldForwardVariantProp = (prop: string): boolean => prop !== 'variant'
+
+export const TitleBar = styled.div.withConfig({
+  shouldForwardProp: (prop) => shouldForwardVariantProp(prop)
+})<TitleBarProps>`
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -128,7 +137,9 @@ interface TitleTextProps {
   variant: TrendChartVariant
 }
 
-export const TitleText = styled.span<TitleTextProps>`
+export const TitleText = styled.span.withConfig({
+  shouldForwardProp: (prop) => shouldForwardVariantProp(prop)
+})<TitleTextProps>`
   font-family: ${({ theme }) => theme.typography.fontFamily};
   font-size: ${({ theme }) => theme.typography.sizes.sm};
   font-weight: ${({ theme }) => theme.typography.weights.medium};

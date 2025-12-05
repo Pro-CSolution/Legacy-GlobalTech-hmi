@@ -1,7 +1,9 @@
 import styled from 'styled-components'
-import { getPositionStyles, PositionProps } from '../../styles/mixins'
+import { getPositionStyles, PositionProps, shouldForwardPositionProp } from 'styles/mixins'
 
-export const Container = styled.div<PositionProps>`
+export const Container = styled.div.withConfig({
+  shouldForwardProp: (prop) => shouldForwardPositionProp(prop)
+})<PositionProps>`
   background: ${({ theme }) => theme.colors.background.primary};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   border-radius: ${({ theme }) => theme.borderRadius.md};
@@ -48,7 +50,9 @@ export const ValueContainer = styled.div`
   margin-top: 8px;
 `
 
-export const Value = styled.span<{ size: 'normal' | 'large' }>`
+export const Value = styled.span.withConfig({
+  shouldForwardProp: (prop) => prop !== 'size'
+})<{ size: 'normal' | 'large' }>`
   font-family: 'Roboto Mono', monospace;
   font-weight: ${({ theme }) => theme.typography.weights.bold};
   color: ${({ theme }) => theme.colors.text.primary};

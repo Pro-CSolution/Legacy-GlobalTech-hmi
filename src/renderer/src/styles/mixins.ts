@@ -11,6 +11,10 @@ export interface PositionProps {
   }
 }
 
+const POSITION_PROP_KEYS = new Set(['width', 'height', 'position'])
+
+export const shouldForwardPositionProp = (prop: string): boolean => !POSITION_PROP_KEYS.has(prop)
+
 export const getPositionStyles = (props: PositionProps): RuleSet<object> => css`
   /* Dimensiones exactas */
   ${props.width &&

@@ -1,0 +1,8 @@
+description: Usar bun como runner por defecto para scripts y TS
+globs: *
+alwaysApply: true
+
+Siempre que ejecutes scripts o herramientas en este repo, usa `bun`:
+- Prefiere `bun run <script>` en `package.json`.
+- Para TypeScript puntual, `bun run file.ts`.
+- Evita `node`/`npm run` salvo que algún paquete lo requiera explícitamente.

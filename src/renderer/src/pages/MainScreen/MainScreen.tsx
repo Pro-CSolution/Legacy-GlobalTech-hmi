@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ScreenLayout } from 'layouts'
 import { TrendChart } from 'components/TrendChart'
+import { useDeviceData, useSendCommand } from 'hooks'
+import { DeviceId } from 'types'
 
 // Local Components
 import { SystemStatus } from './localComponents/SystemStatus'
@@ -12,8 +14,38 @@ import { DriveControl } from './localComponents/DriveControl'
 import { MainContainer } from './MainScreen.styles'
 
 const MainScreen: React.FC = () => {
-  // State
-  const [speedRef, setSpeedRef] = useState(45)
+  const deviceId: DeviceId = 'drive_avid'
+  const { data } = useDeviceData(deviceId)
+  const { writeParameter } = useSendCommand()
+
+  const [speedRef, setSpeedRef] = useState<number>(0)
+
+  // Sincroniza speedRef local con el valor en vivo
+  useEffect(() => {
+    console.log('data', data)
+    const live = data.speedReference?.value
+    if (live !== undefined && live !== null) {
+      const num = Number(live)
+      if (!Number.isNaN(num)) setSpeedRef(num)
+    }
+  }, [data])
+
+  const electrical = useMemo(() => {
+    const toNum = (val: unknown) => {
+      const n = Number(val)
+      return Number.isFinite(n) ? n : 0
+    }
+    return {
+      volts: toNum(data.motorVolts?.value),
+      hz: toNum(data.frequencyFeedback?.value),
+      kw: toNum(data.motorPower?.value),
+      amps: toNum(data.motorCurrent?.value),
+      torque: toNum(data.torqueDemand?.value)
+    }
+  }, [data])
+
+  const driveRunning = electrical.hz > 0.1 || electrical.torque > 0.1 || electrical.amps > 0.1
+
   const [controlState, setControlState] = useState({
     mode: 'local',
     breaker: 'closed',
@@ -25,27 +57,21 @@ const MainScreen: React.FC = () => {
     motorTempHigh: 'ok'
   })
 
-  const [electrical, setElectrical] = useState({
-    volts: 480,
-    amps: 124,
-    hz: 60.0,
-    kw: 85,
-    torque: 78
-  })
-
-  // Simulation Effect
   useEffect(() => {
-    const timer = setInterval(() => {
-      setElectrical(() => ({
-        volts: Number((478 + Math.random() * 4).toFixed(1)),
-        amps: Number(((controlState.driveRunning ? 120 : 0) + Math.random() * 5).toFixed(1)),
-        hz: Number((controlState.driveRunning ? (speedRef / 100) * 60 : 0).toFixed(1)),
-        kw: Number((controlState.driveRunning ? (speedRef / 100) * 90 : 0).toFixed(1)),
-        torque: Number((controlState.driveRunning ? 75 + Math.random() * 5 : 0).toFixed(1))
-      }))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [controlState.driveRunning, speedRef])
+    setControlState((prev) => ({
+      ...prev,
+      driveRunning
+    }))
+  }, [driveRunning])
+
+  const handleSetSpeedRef = async (value: number) => {
+    setSpeedRef(value)
+    await writeParameter({
+      deviceId,
+      parameterId: data.speedReference?.id,
+      value
+    })
+  }
 
   return (
     <ScreenLayout>
@@ -59,7 +85,7 @@ const MainScreen: React.FC = () => {
         {/* Center Bottom: Speed Control (Absolute Position) */}
         <SpeedControl
           speedRef={speedRef}
-          setSpeedRef={setSpeedRef}
+          setSpeedRef={handleSetSpeedRef}
           position={{ left: 420, bottom: 97 }}
           height={380}
           width={1080}

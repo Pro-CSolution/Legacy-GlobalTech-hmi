@@ -3,9 +3,9 @@ import { io, Socket, ManagerOptions, SocketOptions } from 'socket.io-client'
 export interface ISocketService {
   connect(): void
   disconnect(): void
-  on(event: string, callback: (...args: any[]) => void): void
-  off(event: string, callback?: (...args: any[]) => void): void
-  emit(event: string, data: any): void
+  on<TArgs extends unknown[]>(event: string, callback: (...args: TArgs) => void): void
+  off<TArgs extends unknown[]>(event: string, callback?: (...args: TArgs) => void): void
+  emit<TData = unknown>(event: string, data: TData): void
   isConnected(): boolean
 }
 
@@ -50,7 +50,7 @@ export class SocketService implements ISocketService {
     }
   }
 
-  public on(event: string, callback: (...args: any[]) => void): void {
+  public on<TArgs extends unknown[]>(event: string, callback: (...args: TArgs) => void): void {
     if (!this.socket) {
       console.warn(
         `Cannot listen to event "${event}": Socket not initialized. Call connect() first.`
@@ -60,12 +60,12 @@ export class SocketService implements ISocketService {
     this.socket.on(event, callback)
   }
 
-  public off(event: string, callback?: (...args: any[]) => void): void {
+  public off<TArgs extends unknown[]>(event: string, callback?: (...args: TArgs) => void): void {
     if (!this.socket) return
     this.socket.off(event, callback)
   }
 
-  public emit(event: string, data: any): void {
+  public emit<TData = unknown>(event: string, data: TData): void {
     if (!this.socket) {
       console.warn(`Cannot emit event "${event}": Socket not initialized. Call connect() first.`)
       return

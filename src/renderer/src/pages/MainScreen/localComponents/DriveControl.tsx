@@ -44,7 +44,7 @@ export const DriveControl: React.FC<DriveControlProps> = ({
         <DriveStatusBox>
           <DriveStatusRow>
             <DriveLabel>STATE:</DriveLabel>
-            <DriveState active={controlState.driveRunning}>
+            <DriveState $active={controlState.driveRunning}>
               {controlState.driveRunning ? 'RUNNING' : 'STOPPED'}
             </DriveState>
           </DriveStatusRow>
