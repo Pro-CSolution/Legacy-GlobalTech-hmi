@@ -51,6 +51,7 @@ type DevicesFile = {
   devices?: Array<{
     id?: string
     critical_parameters?: string[]
+    parameter_file?: string
   }>
 }
 
@@ -92,28 +93,18 @@ const ensureDir = (dir: string): void => {
 const main = (): void => {
   const backendRoot = resolveBackendRoot()
   const devicesPath = path.join(backendRoot, 'config', 'devices.yaml')
-  const parametersPath = path.join(backendRoot, 'parameters.json')
 
   if (!fs.existsSync(devicesPath)) {
     throw new Error(`devices.yaml no encontrado en ${devicesPath}`)
   }
-  if (!fs.existsSync(parametersPath)) {
-    throw new Error(`parameters.json no encontrado en ${parametersPath}`)
-  }
 
   const devicesFile = loadDevices(devicesPath)
-  const parameters = loadParameters(parametersPath)
-
   const parameterMetaMap = new Map<string, ParameterEntry>()
-  parameters.forEach((p) => {
-    if (p.id) {
-      parameterMetaMap.set(p.id, p)
-    }
-  })
 
   const deviceIds = new Set<string>()
   const parameterIds = new Set<string>()
   const deviceParameters: Record<string, string[]> = {}
+  const missingParamFiles: string[] = []
 
   devicesFile.devices?.forEach((device) => {
     if (!device.id) return
@@ -122,7 +113,28 @@ const main = (): void => {
     const unique = Array.from(new Set(crit))
     deviceParameters[device.id] = unique
     unique.forEach((pid) => parameterIds.add(pid))
+
+    // Resolver archivo de parámetros por dispositivo
+    const paramFile = device.parameter_file || 'parameters/default.parameters.json'
+    const paramPath = path.join(backendRoot, paramFile)
+    if (!fs.existsSync(paramPath)) {
+      missingParamFiles.push(`${device.id} -> ${paramPath}`)
+      return
+    }
+
+    const parameters = loadParameters(paramPath)
+    parameters.forEach((p) => {
+      if (!p.id) return
+      // La primera ocurrencia gana; si el mismo id se repite en otro device, se mantiene la meta ya registrada
+      if (!parameterMetaMap.has(p.id)) {
+        parameterMetaMap.set(p.id, p)
+      }
+    })
   })
+
+  if (missingParamFiles.length) {
+    throw new Error(`Archivos de parámetros faltantes:\n${missingParamFiles.join('\n')}`)
+  }
 
   const sortedDeviceIds = Array.from(deviceIds).sort()
   const sortedParameterIds = Array.from(parameterIds).sort()

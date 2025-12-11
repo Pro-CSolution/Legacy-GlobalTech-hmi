@@ -1,4 +1,4 @@
-import React from 'react'
+import { FC } from 'react'
 import { Activity } from 'lucide-react'
 import Card from 'components/Card'
 import StatusBadge from 'components/StatusBadge'
@@ -17,9 +17,13 @@ interface SystemStatusProps extends PositionProps {
   }
 }
 
-export const SystemStatus: React.FC<SystemStatusProps> = ({ controlState, ...positionProps }) => {
+export const SystemStatus: FC<SystemStatusProps> = ({
+  controlState,
+  height = 950,
+  ...positionProps
+}) => {
   return (
-    <Panel width={380} height={850} {...positionProps}>
+    <Panel width={380} height={height} {...positionProps}>
       <Card title="System Status" icon={Activity}>
         <StatusList>
           <StatusBadge

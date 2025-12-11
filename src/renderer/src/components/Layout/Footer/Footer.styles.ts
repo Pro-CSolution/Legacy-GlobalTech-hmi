@@ -5,7 +5,7 @@ export const FooterContainer = styled.footer`
   background: ${({ theme }) => theme.colors.background.primary};
   border-top: 1px solid ${({ theme }) => theme.colors.borders.primary};
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 10px;
   padding: 8px;
   flex-shrink: 0;

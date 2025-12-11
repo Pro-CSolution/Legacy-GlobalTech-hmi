@@ -33,12 +33,12 @@ export const ButtonGroup = styled.div`
   gap: 8px;
 `
 
-export const TimeButton = styled.button<{ isActive?: boolean }>`
-  background-color: ${({ isActive, theme }) =>
-    isActive ? theme.colors.accent.primary : 'transparent'};
-  color: ${({ isActive, theme }) => (isActive ? '#fff' : theme.colors.text.secondary)};
+export const TimeButton = styled.button<{ $isActive?: boolean }>`
+  background-color: ${({ $isActive, theme }) =>
+    $isActive ? theme.colors.accent.primary : 'transparent'};
+  color: ${({ $isActive, theme }) => ($isActive ? '#fff' : theme.colors.text.secondary)};
   border: 1px solid
-    ${({ isActive, theme }) => (isActive ? theme.colors.accent.primary : 'transparent')};
+    ${({ $isActive, theme }) => ($isActive ? theme.colors.accent.primary : 'transparent')};
   padding: 4px 12px;
   border-radius: ${({ theme }) => theme.borderRadius.sm};
   font-size: ${({ theme }) => theme.typography.sizes.xs};
@@ -48,19 +48,19 @@ export const TimeButton = styled.button<{ isActive?: boolean }>`
 
   &:hover {
     color: #fff;
-    background-color: ${({ isActive, theme }) =>
-      isActive ? theme.colors.accent.primary : theme.colors.background.tertiary};
+    background-color: ${({ $isActive, theme }) =>
+      $isActive ? theme.colors.accent.primary : theme.colors.background.tertiary};
   }
 `
 
 export const ActionButton = styled.button<{
-  variant?: 'primary' | 'secondary' | 'danger' | 'success'
+  $variant?: 'primary' | 'secondary' | 'danger' | 'success'
 }>`
   display: flex;
   align-items: center;
   gap: 6px;
-  background-color: ${({ variant, theme }) => {
-    switch (variant) {
+  background-color: ${({ $variant, theme }) => {
+    switch ($variant) {
       case 'primary':
         return theme.colors.accent.primary
       case 'success':
@@ -99,7 +99,7 @@ export const ContentArea = styled.div`
   position: relative;
 `
 
-export const ChartSection = styled.div<{ isShrunk?: boolean }>`
+export const ChartSection = styled.div<{ $isShrunk?: boolean }>`
   flex-grow: 1;
   background-color: ${({ theme }) => theme.colors.background.secondary}99;
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
@@ -109,7 +109,7 @@ export const ChartSection = styled.div<{ isShrunk?: boolean }>`
   flex-direction: column;
   transition: margin-right 0.3s ease-in-out;
   /* When shrunk, we add margin to the right to make space for the panel */
-  margin-right: ${({ isShrunk }) => (isShrunk ? '320px' : '0')};
+  margin-right: ${({ $isShrunk }) => ($isShrunk ? '320px' : '0')};
   position: relative;
 `
 
@@ -137,7 +137,7 @@ export const LegendItem = styled.div`
   font-size: ${({ theme }) => theme.typography.sizes.xs};
 `
 
-export const ReportPanel = styled.div<{ isOpen: boolean }>`
+export const ReportPanel = styled.div<{ $isOpen: boolean }>`
   width: 300px;
   background-color: ${({ theme }) => theme.colors.background.secondary};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
@@ -148,7 +148,7 @@ export const ReportPanel = styled.div<{ isOpen: boolean }>`
   right: 0;
   top: 0;
   bottom: 0;
-  transform: ${({ isOpen }) => (isOpen ? 'translateX(0)' : 'translateX(110%)')};
+  transform: ${({ $isOpen }) => ($isOpen ? 'translateX(0)' : 'translateX(110%)')};
   transition: transform 0.3s ease-in-out;
   box-shadow: ${({ theme }) => theme.shadows.lg};
   z-index: 20;

@@ -3,6 +3,7 @@ import { Settings, Play, Square, RefreshCcw, AlertOctagon } from 'lucide-react'
 import Card from 'components/Card'
 import ActionButton from 'components/ActionButton'
 import Panel from 'components/Panel'
+import { DriveKeypad } from './DriveKeypad'
 import {
   DriveStatusBox,
   DriveStatusRow,
@@ -10,6 +11,8 @@ import {
   DriveState,
   DriveFaultBox,
   DriveControls,
+  DriveContent,
+  DriveKeypadSection,
   EmergencyStopContainer
 } from '../MainScreen.styles'
 import { PositionProps } from 'styles/mixins'
@@ -41,49 +44,55 @@ export const DriveControl: React.FC<DriveControlProps> = ({
   return (
     <Panel {...positionProps}>
       <Card title="Drive Commands" icon={Settings} titleColor="#06b6d4">
-        <DriveStatusBox>
-          <DriveStatusRow>
-            <DriveLabel>STATE:</DriveLabel>
-            <DriveState $active={controlState.driveRunning}>
-              {controlState.driveRunning ? 'RUNNING' : 'STOPPED'}
-            </DriveState>
-          </DriveStatusRow>
-          {controlState.driveFault && <DriveFaultBox>DRIVE FAULT!</DriveFaultBox>}
-        </DriveStatusBox>
+        <DriveContent>
+          <DriveStatusBox>
+            <DriveStatusRow>
+              <DriveLabel>STATE:</DriveLabel>
+              <DriveState $active={controlState.driveRunning}>
+                {controlState.driveRunning ? 'RUNNING' : 'STOPPED'}
+              </DriveState>
+            </DriveStatusRow>
+            {controlState.driveFault && <DriveFaultBox>DRIVE FAULT!</DriveFaultBox>}
+          </DriveStatusBox>
 
-        <DriveControls>
-          <ActionButton
-            label="START DRIVE"
-            color="green"
-            icon={Play}
-            active={controlState.driveRunning}
-            onClick={() =>
-              setControlState((p) => ({ ...p, driveRunning: true, driveFault: false }))
-            }
-          />
+          <DriveControls>
+            <ActionButton
+              label="START DRIVE"
+              color="green"
+              icon={Play}
+              active={controlState.driveRunning}
+              onClick={() =>
+                setControlState((p) => ({ ...p, driveRunning: true, driveFault: false }))
+              }
+            />
 
-          <ActionButton
-            label="STOP DRIVE"
-            color="red"
-            icon={Square}
-            onClick={() => setControlState((p) => ({ ...p, driveRunning: false }))}
-          />
+            <ActionButton
+              label="STOP DRIVE"
+              color="red"
+              icon={Square}
+              onClick={() => setControlState((p) => ({ ...p, driveRunning: false }))}
+            />
 
-          <div style={{ height: '16px' }} />
+            <div style={{ height: '16px' }} />
 
-          <ActionButton
-            label="RESET FAULTS"
-            color="slate"
-            icon={RefreshCcw}
-            onClick={() =>
-              setControlState((p) => ({ ...p, driveFault: false, motorTempHigh: 'ok' }))
-            }
-          />
-        </DriveControls>
+            <ActionButton
+              label="RESET FAULTS"
+              color="slate"
+              icon={RefreshCcw}
+              onClick={() =>
+                setControlState((p) => ({ ...p, driveFault: false, motorTempHigh: 'ok' }))
+              }
+            />
+          </DriveControls>
 
-        <EmergencyStopContainer>
-          <ActionButton label="EMERGENCY STOP" color="red" icon={AlertOctagon} />
-        </EmergencyStopContainer>
+          <DriveKeypadSection>
+            <DriveKeypad />
+          </DriveKeypadSection>
+
+          <EmergencyStopContainer>
+            <ActionButton label="EMERGENCY STOP" color="red" icon={AlertOctagon} height="72px" />
+          </EmergencyStopContainer>
+        </DriveContent>
       </Card>
     </Panel>
   )

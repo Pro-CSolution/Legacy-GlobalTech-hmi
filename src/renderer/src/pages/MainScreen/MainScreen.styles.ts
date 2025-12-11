@@ -9,16 +9,16 @@ export const MainContainer = styled.div`
 export const StatusList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 `
 
 export const WarningGroup = styled.div`
   border-top: 1px solid ${({ theme }) => theme.colors.borders.primary};
-  margin-top: 8px;
-  padding-top: 16px;
+  margin-top: 4px;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 `
 
 export const ElectricalGrid = styled.div`
@@ -26,6 +26,28 @@ export const ElectricalGrid = styled.div`
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   height: 100%;
+`
+
+export const GaugeTile = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  background: none;
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  height: 100%;
+  min-height: 0;
+`
+
+export const GaugeLabel = styled.span`
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: ${({ theme }) => theme.typography.sizes.md};
+  font-weight: ${({ theme }) => theme.typography.weights.medium};
+  text-align: center;
+  letter-spacing: 0.5px;
 `
 
 export const TrendPlaceholder = styled.div`
@@ -186,6 +208,20 @@ export const DriveControls = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
+`
+
+export const DriveContent = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+`
+
+export const DriveKeypadSection = styled.div`
+  display: flex;
+  justify-content: center;
+  padding: 5px 0;
+  height: 460px;
+  cursor: pointer;
 `
 
 export const EmergencyStopContainer = styled.div`

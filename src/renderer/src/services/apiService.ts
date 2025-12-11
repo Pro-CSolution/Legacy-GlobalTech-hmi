@@ -11,7 +11,22 @@ export class ApiService implements IApiService {
   private axiosInstance: AxiosInstance
 
   constructor(config: AxiosRequestConfig) {
-    this.axiosInstance = axios.create(config)
+    this.axiosInstance = axios.create({
+      ...config,
+      paramsSerializer: {
+        serialize: (params) => {
+          const usp = new URLSearchParams()
+          Object.entries(params || {}).forEach(([key, value]) => {
+            if (Array.isArray(value)) {
+              value.forEach((item) => usp.append(key, String(item)))
+            } else if (value !== undefined && value !== null) {
+              usp.append(key, String(value))
+            }
+          })
+          return usp.toString()
+        }
+      }
+    })
 
     this.setupInterceptors()
   }

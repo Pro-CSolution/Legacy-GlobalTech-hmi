@@ -2,6 +2,7 @@
  * TrendChart Component Types
  * Industrial HMI trend chart for real-time data visualization
  */
+import type uPlot from 'uplot'
 
 /** Single data point in the chart */
 export interface ChartDataPoint {
@@ -136,6 +137,10 @@ export interface TrendChartProps {
   showLegend?: boolean
   /** Show tooltips on hover */
   showTooltips?: boolean
+  /** Show fixed inspector panel with current values */
+  showInspector?: boolean
+  /** Allow clicking to pin a point for comparison */
+  enablePinning?: boolean
   /** Responsive mode */
   responsive?: boolean
   /** Maintain aspect ratio */
@@ -160,8 +165,8 @@ export interface TrendChartProps {
 
 /** Ref methods exposed by the component */
 export interface TrendChartRef {
-  /** Get the Chart.js instance */
-  getChart: () => unknown
+  /** Get the uPlot instance */
+  getChart: () => uPlot | null
   /** Update chart data programmatically */
   updateData: (newDatasets: Dataset[]) => void
   /** Reset chart to initial state */

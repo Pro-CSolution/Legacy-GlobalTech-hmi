@@ -169,9 +169,10 @@ export const ChartWrapper = styled.div`
   padding: 8px;
   min-height: 0;
 
-  canvas {
-    width: 100% !important;
-    height: 100% !important;
+  .uplot {
+    width: 100%;
+    height: 100%;
+    font-family: ${({ theme }) => theme.typography.fontFamily};
   }
 `
 
@@ -242,4 +243,213 @@ export const NoDataContainer = styled.div`
   font-family: ${({ theme }) => theme.typography.fontFamily};
   font-size: ${({ theme }) => theme.typography.sizes.sm};
   font-style: italic;
+`
+
+// === Legend ===
+
+export const LegendContainer = styled.div`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: ${({ theme }) => `${theme.colors.background.tertiary}cc`};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  backdrop-filter: blur(6px);
+  z-index: 2;
+`
+
+export const LegendItem = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+`
+
+export const LegendDot = styled.span`
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+`
+
+// === Tooltip ===
+
+export const TooltipContainer = styled.div`
+  position: absolute;
+  min-width: 160px;
+  background: ${({ theme }) => theme.colors.background.tertiary};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  box-shadow: ${({ theme }) => theme.shadows.lg};
+  padding: 8px 10px;
+  pointer-events: none;
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  z-index: 3;
+`
+
+export const TooltipHeader = styled.div`
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  margin-bottom: 6px;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  letter-spacing: 0.2px;
+`
+
+export const TooltipRow = styled.div`
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  color: ${({ theme }) => theme.colors.text.primary};
+`
+
+// === Inspector Panel ===
+
+export const InspectorContainer = styled.div`
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: ${({ theme }) => `${theme.colors.background.secondary}e6`};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  box-shadow: ${({ theme }) => theme.shadows.lg};
+  backdrop-filter: blur(6px);
+  z-index: 3;
+  pointer-events: none;
+`
+
+export const InspectorSection = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`
+
+export const InspectorHeader = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  letter-spacing: 0.2px;
+`
+
+export const InspectorTitle = styled.span`
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  color: ${({ theme }) => theme.colors.text.primary};
+  text-transform: uppercase;
+`
+
+export const InspectorTime = styled.span`
+  font-variant-numeric: tabular-nums;
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
+export const InspectorRow = styled.div`
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+`
+
+export const InspectorValue = styled.span`
+  font-variant-numeric: tabular-nums;
+  color: ${({ theme }) => theme.colors.text.primary};
+`
+
+export const DeltaBadge = styled.span<{ tone: 'positive' | 'negative' | 'neutral' }>`
+  padding: 2px 6px;
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  font-variant-numeric: tabular-nums;
+  font-weight: ${({ theme }) => theme.typography.weights.medium};
+  color: ${({ theme, tone }) => {
+    if (tone === 'positive') return theme.colors.status.running
+    if (tone === 'negative') return theme.colors.status.alarm
+    return theme.colors.text.secondary
+  }};
+  background: ${({ theme }) => `${theme.colors.background.tertiary}aa`};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+`
+
+export const InspectorActions = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+`
+
+export const ClearPinButton = styled.button`
+  pointer-events: auto;
+  padding: 6px 10px;
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background: ${({ theme }) => `${theme.colors.background.tertiary}dd`};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.background.secondary};
+    color: ${({ theme }) => theme.colors.accent.primary};
+  }
+`
+
+export const Divider = styled.div`
+  height: 1px;
+  background: ${({ theme }) => theme.colors.borders.primary};
+  opacity: 0.3;
+`
+
+export const EmptyState = styled.div`
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  font-family: ${({ theme }) => theme.typography.fontFamily};
+`
+
+// === Scrubber Lines ===
+
+export const ScrubberLine = styled.div`
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: ${({ theme }) => theme.colors.accent.primary};
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: 2;
+`
+
+export const PinnedLine = styled.div`
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: ${({ theme }) => theme.colors.status.warning};
+  opacity: 0.9;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: 0 0 0 1px ${({ theme }) => `${theme.colors.status.warning}55`};
 `

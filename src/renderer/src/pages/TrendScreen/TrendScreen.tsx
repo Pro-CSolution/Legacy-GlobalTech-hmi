@@ -1,39 +1,85 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Filter, Mail, X, Plus, CheckCircle, AlertTriangle, RefreshCcw, Send } from 'lucide-react'
 import { useTheme } from 'styled-components'
 import { TrendChart } from '../../components/TrendChart'
-import { Dataset } from '../../components/TrendChart/TrendChart.types'
 import { ScreenLayout } from '../../layouts'
+import { useTrendData } from '../../hooks'
+import { ParameterAlias, PARAMETER_ALIASES } from '../../types/generated/devices'
 import * as S from './TrendScreen.styles'
 
 // --- Configuration ---
 
-interface ExtendedDataset extends Dataset {
-  unit?: string
-}
-
 const AVAILABLE_VARIABLES = [
-  { id: 'v_line', label: 'Line Voltage', unit: 'VAC', color: '#06b6d4', category: 'Electrical' },
-  { id: 'current', label: 'Total Current', unit: 'A', color: '#10b981', category: 'Electrical' },
-  { id: 'power', label: 'Active Power', unit: 'kW', color: '#8b5cf6', category: 'Electrical' },
-  { id: 'freq', label: 'Frequency', unit: 'Hz', color: '#f59e0b', category: 'Drive' },
-  { id: 'torque', label: 'Motor Torque', unit: '%', color: '#f43f5e', category: 'Drive' },
   {
-    id: 'temp_motor',
+    id: PARAMETER_ALIASES.motorVolts,
+    label: 'Line Voltage',
+    unit: 'VAC',
+    color: '#06b6d4',
+    category: 'Electrical'
+  },
+  {
+    id: PARAMETER_ALIASES.motorCurrent,
+    label: 'Total Current',
+    unit: 'A',
+    color: '#10b981',
+    category: 'Electrical'
+  },
+  {
+    id: PARAMETER_ALIASES.motorPower,
+    label: 'Active Power',
+    unit: 'kW',
+    color: '#8b5cf6',
+    category: 'Electrical'
+  },
+  {
+    id: PARAMETER_ALIASES.frequencyFeedback,
+    label: 'Frequency',
+    unit: 'Hz',
+    color: '#f59e0b',
+    category: 'Drive'
+  },
+  {
+    id: PARAMETER_ALIASES.torqueDemand,
+    label: 'Motor Torque',
+    unit: '%',
+    color: '#f43f5e',
+    category: 'Drive'
+  },
+  {
+    id: PARAMETER_ALIASES.cdcElectronicsTemperature,
     label: 'Winding Temp',
-    unit: '°F',
+    unit: '°C',
     color: '#3b82f6',
     category: 'Temperature'
   },
   {
-    id: 'temp_bearing',
+    id: PARAMETER_ALIASES.inputBridgeTemperature,
     label: 'Bearing Temp',
-    unit: '°F',
+    unit: '°C',
     color: '#ec4899',
     category: 'Temperature'
   },
-  { id: 'vib_x', label: 'Vibration X', unit: 'mm/s', color: '#d946ef', category: 'Mechanical' },
-  { id: 'pressure', label: 'Coolant Pressure', unit: 'PSI', color: '#14b8a6', category: 'Process' }
+  {
+    id: PARAMETER_ALIASES.driveCurrent,
+    label: 'Vibration X',
+    unit: 'mm/s',
+    color: '#d946ef',
+    category: 'Mechanical'
+  },
+  {
+    id: PARAMETER_ALIASES.torqueLimitPositive1,
+    label: 'Coolant Pressure',
+    unit: 'PSI',
+    color: '#14b8a6',
+    category: 'Process'
+  },
+  {
+    id: PARAMETER_ALIASES.jogSpeed1,
+    label: 'Jog Speed 1',
+    unit: '',
+    color: '#14b8a6',
+    category: 'Process'
+  }
 ]
 
 const TIME_RANGES = [
@@ -48,7 +94,11 @@ const TrendScreen: React.FC = () => {
   const theme = useTheme()
 
   // State
-  const [selectedVarIds, setSelectedVarIds] = useState<string[]>(['v_line', 'current', 'freq'])
+  const [selectedVarIds, setSelectedVarIds] = useState<ParameterAlias[]>([
+    PARAMETER_ALIASES.motorVolts,
+    PARAMETER_ALIASES.motorCurrent,
+    PARAMETER_ALIASES.frequencyFeedback
+  ])
   const [timeRange, setTimeRange] = useState<number>(60) // Minutes
   const [isConfigOpen, setIsConfigOpen] = useState(false)
   const [isReportOpen, setIsReportOpen] = useState(false)
@@ -58,77 +108,10 @@ const TrendScreen: React.FC = () => {
   const [newEmail, setNewEmail] = useState('')
   const [isSending, setIsSending] = useState(false)
 
-  // Data Generation State
-  const [chartData, setChartData] = useState<ExtendedDataset[]>([])
-
-  // Initial Data Generation
-  useEffect(() => {
-    const now = Date.now()
-    const points = 60 * timeRange // 1 point per second approx for simplicity in this demo
-
-    const initialDatasets: ExtendedDataset[] = selectedVarIds.map((id) => {
-      const def = AVAILABLE_VARIABLES.find((v) => v.id === id)!
-      const data: { x: number; y: number }[] = []
-
-      let value = id === 'v_line' ? 480 : id === 'current' ? 120 : id === 'freq' ? 60 : 70
-
-      for (let i = points; i >= 0; i--) {
-        const time = (now - i * 1000) / 1000 // Seconds
-        const noise = (Math.random() - 0.5) * (value * 0.02)
-        value += noise
-        // Clamp
-        if (id === 'freq') value = Math.max(59, Math.min(61, value))
-
-        data.push({ x: time, y: value })
-      }
-
-      return {
-        label: def.label,
-        data: data,
-        borderColor: def.color,
-        backgroundColor: 'transparent',
-        pointRadius: 0,
-        borderWidth: 2,
-        tension: 0.4,
-        unit: def.unit // Custom prop for legend
-      }
-    })
-
-    setChartData(initialDatasets)
-  }, [selectedVarIds, timeRange])
-
-  // Real-time Update Simulation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setChartData((prevDatasets) => {
-        return prevDatasets.map((ds) => {
-          const lastVal = ds.data[ds.data.length - 1].y
-          const noise = (Math.random() - 0.5) * (lastVal * 0.05)
-          let newVal = lastVal + noise
-
-          // Simple bounds
-          if (newVal < 0) newVal = 0
-
-          const newPoint = {
-            x: Date.now() / 1000,
-            y: newVal
-          }
-
-          // Keep only necessary points for time window
-          // timeRange is in minutes, we keep slightly more
-          const cutoff = Date.now() / 1000 - timeRange * 60
-          const newData = [...ds.data, newPoint].filter((p) => p.x > cutoff)
-
-          return {
-            ...ds,
-            data: newData
-          }
-        })
-      })
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [timeRange])
+  // Live data from backend
+  const { datasets, xDomain } = useTrendData('drive_avid', selectedVarIds, {
+    windowMinutes: timeRange
+  })
 
   // Handlers
   const handleToggleVar = (id: string): void => {
@@ -158,14 +141,14 @@ const TrendScreen: React.FC = () => {
 
   // Legend Values (Current)
   const currentValues = useMemo(() => {
-    return chartData.map((ds) => ({
-      id: ds.label,
-      label: ds.label,
+    return datasets.map((ds) => ({
+      id: ds.label || ds.parameterId,
+      label: ds.label || ds.parameterId,
       color: ds.borderColor,
       value: ds.data.length > 0 ? ds.data[ds.data.length - 1].y : 0,
-      unit: ds.unit
+      unit: AVAILABLE_VARIABLES.find((v) => v.id === ds.parameterId)?.unit
     }))
-  }, [chartData])
+  }, [datasets])
 
   return (
     <ScreenLayout>
@@ -176,7 +159,7 @@ const TrendScreen: React.FC = () => {
             {TIME_RANGES.map((range) => (
               <S.TimeButton
                 key={range.value}
-                isActive={timeRange === range.value}
+                $isActive={timeRange === range.value}
                 onClick={() => setTimeRange(range.value)}
               >
                 {range.label}
@@ -190,7 +173,7 @@ const TrendScreen: React.FC = () => {
               <span>VARIABLES ({selectedVarIds.length}/5)</span>
             </S.ActionButton>
             <S.ActionButton
-              variant={isReportOpen ? 'primary' : undefined}
+              $variant={isReportOpen ? 'primary' : undefined}
               onClick={() => setIsReportOpen(!isReportOpen)}
             >
               <Mail size={14} />
@@ -201,9 +184,9 @@ const TrendScreen: React.FC = () => {
 
         {/* Main Content */}
         <S.ContentArea>
-          <S.ChartSection isShrunk={isReportOpen}>
+          <S.ChartSection $isShrunk={isReportOpen}>
             <TrendChart
-              datasets={chartData}
+              datasets={datasets}
               timeWindow={timeRange}
               showLegend={false}
               showTitle={false}
@@ -214,8 +197,8 @@ const TrendScreen: React.FC = () => {
               width={'98%'}
               scales={{
                 x: {
-                  min: Date.now() / 1000 - timeRange * 60,
-                  max: Date.now() / 1000,
+                  min: xDomain?.min,
+                  max: xDomain?.max,
                   ticks: {
                     callback: (val: unknown): string => {
                       const date = new Date((val as number) * 1000)
@@ -252,7 +235,7 @@ const TrendScreen: React.FC = () => {
           </S.ChartSection>
 
           {/* Report Panel */}
-          <S.ReportPanel isOpen={isReportOpen}>
+          <S.ReportPanel $isOpen={isReportOpen}>
             <S.PanelHeader>
               <h3>
                 <Mail size={16} /> Automatic Report
@@ -316,7 +299,7 @@ const TrendScreen: React.FC = () => {
             </S.InputGroup>
 
             <S.ActionButton
-              variant="success"
+              $variant="success"
               style={{ marginTop: 'auto', justifyContent: 'center', padding: '12px' }}
               onClick={handleSendReport}
               disabled={isSending}
@@ -414,7 +397,7 @@ const TrendScreen: React.FC = () => {
               </S.ModalBody>
 
               <S.ModalFooter>
-                <S.ActionButton variant="primary" onClick={() => setIsConfigOpen(false)}>
+                <S.ActionButton $variant="primary" onClick={() => setIsConfigOpen(false)}>
                   APPLY CHANGES
                 </S.ActionButton>
               </S.ModalFooter>

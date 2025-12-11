@@ -1,34 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { ScreenLayout } from 'layouts'
 import { TrendChart } from 'components/TrendChart'
-import { useDeviceData, useSendCommand } from 'hooks'
+import { useDeviceData, useSendCommand, useTrendData } from 'hooks'
 import { DeviceId } from 'types'
+import { ParameterAlias, PARAMETER_ALIASES } from 'types/generated/devices'
 
 // Local Components
 import { SystemStatus } from './localComponents/SystemStatus'
 import { ElectricalParams } from './localComponents/ElectricalParams'
 import { SpeedControl } from './localComponents/SpeedControl'
 import { DriveControl } from './localComponents/DriveControl'
+import { ClientMotorInfo } from './localComponents/ClientMotorInfo'
 
 // Styles
 import { MainContainer } from './MainScreen.styles'
 
-const MainScreen: React.FC = () => {
-  const deviceId: DeviceId = 'drive_avid'
-  const { data } = useDeviceData(deviceId)
-  const { writeParameter } = useSendCommand()
+const TREND_ALIASES: ParameterAlias[] = ['torqueDemand', 'dcLinkVoltage', 'speedFeedback']
 
+const MainScreen: React.FC = () => {
+  const driveId: DeviceId = 'drive_avid'
+
+  const { data: driveData } = useDeviceData(driveId)
+
+  const { writeParameter } = useSendCommand()
+  const { xDomain: trendXDomain, getDataset: getTrendDataset } = useTrendData(
+    driveId,
+    TREND_ALIASES,
+    {
+      windowMinutes: 5
+    }
+  )
   const [speedRef, setSpeedRef] = useState<number>(0)
 
   // Sincroniza speedRef local con el valor en vivo
   useEffect(() => {
-    console.log('data', data)
-    const live = data.speedReference?.value
+    const live = driveData.speedReference?.value
     if (live !== undefined && live !== null) {
       const num = Number(live)
       if (!Number.isNaN(num)) setSpeedRef(num)
     }
-  }, [data])
+  }, [driveData])
 
   const electrical = useMemo(() => {
     const toNum = (val: unknown) => {
@@ -36,13 +47,13 @@ const MainScreen: React.FC = () => {
       return Number.isFinite(n) ? n : 0
     }
     return {
-      volts: toNum(data.motorVolts?.value),
-      hz: toNum(data.frequencyFeedback?.value),
-      kw: toNum(data.motorPower?.value),
-      amps: toNum(data.motorCurrent?.value),
-      torque: toNum(data.torqueDemand?.value)
+      volts: toNum(driveData.motorVolts?.value),
+      hz: toNum(driveData.frequencyFeedback?.value),
+      kw: toNum(driveData.motorPower?.value),
+      amps: toNum(driveData.motorCurrent?.value),
+      torque: toNum(driveData.torqueDemand?.value)
     }
-  }, [data])
+  }, [driveData])
 
   const driveRunning = electrical.hz > 0.1 || electrical.torque > 0.1 || electrical.amps > 0.1
 
@@ -67,8 +78,8 @@ const MainScreen: React.FC = () => {
   const handleSetSpeedRef = async (value: number) => {
     setSpeedRef(value)
     await writeParameter({
-      deviceId,
-      parameterId: data.speedReference?.id,
+      deviceId: driveId,
+      parameterId: driveData.speedReference?.id,
       value
     })
   }
@@ -77,7 +88,8 @@ const MainScreen: React.FC = () => {
     <ScreenLayout>
       <MainContainer>
         {/* Left Column: System Status (Absolute Position) */}
-        <SystemStatus controlState={controlState} position={{ left: 20, top: 20 }} />
+        <SystemStatus controlState={controlState} height={582} position={{ left: 20, top: 20 }} />
+        <ClientMotorInfo position={{ left: 20, top: 610 }} width={380} height={360} />
 
         {/* Center Top: Electrical (Absolute Position) */}
         <ElectricalParams electrical={electrical} position={{ left: 420, top: 20 }} />
@@ -86,8 +98,8 @@ const MainScreen: React.FC = () => {
         <SpeedControl
           speedRef={speedRef}
           setSpeedRef={handleSetSpeedRef}
-          position={{ left: 420, bottom: 97 }}
-          height={380}
+          position={{ left: 420, bottom: 0.1 }}
+          height={280}
           width={1080}
         />
 
@@ -96,63 +108,54 @@ const MainScreen: React.FC = () => {
           controlState={controlState}
           setControlState={setControlState}
           position={{ left: 1520, top: 20 }}
-          height={850}
+          height={950}
           width={350}
         />
 
         {/* Trend Chart Demo */}
         <TrendChart
           title="Pressure"
-          demoData
-          demoDataConfig={{
-            baseValue: 5, // Presión típica (bar)
-            noiseAmplitude: 0.8,
-            minValue: 2,
-            maxValue: 10
-          }}
+          datasets={getTrendDataset(PARAMETER_ALIASES.torqueDemand)}
           timeWindow={5}
           variant="modern"
-          position={{ left: 420, top: 310 }}
+          position={{ left: 420, top: 500 }}
           width={350}
           height={170}
           scales={{
-            y: { min: 2, max: 10 }
+            x: {
+              min: trendXDomain?.min,
+              max: trendXDomain?.max
+            }
           }}
         />
         <TrendChart
-          title="Temperature"
-          demoData
-          demoDataConfig={{
-            baseValue: 62, // Temperatura típica (°C)
-            noiseAmplitude: 17,
-            minValue: 40,
-            maxValue: 80
-          }}
+          title="Dc Link Voltage"
+          datasets={getTrendDataset(PARAMETER_ALIASES.dcLinkVoltage)}
           timeWindow={5}
           variant="modern"
-          position={{ left: 785, top: 310 }}
+          position={{ left: 785, top: 500 }}
           width={350}
           height={170}
           scales={{
-            y: { min: 40, max: 80 }
+            x: {
+              min: trendXDomain?.min,
+              max: trendXDomain?.max
+            }
           }}
         />
         <TrendChart
           title="RPM"
-          demoData
-          demoDataConfig={{
-            baseValue: 1480, // Velocidad típica de motor (rpm)
-            noiseAmplitude: 60,
-            minValue: 1280,
-            maxValue: 1600
-          }}
+          datasets={getTrendDataset(PARAMETER_ALIASES.speedFeedback)}
           timeWindow={5}
           variant="modern"
-          position={{ left: 1150, top: 310 }}
+          position={{ left: 1150, top: 500 }}
           width={350}
           height={170}
           scales={{
-            y: { min: 1280, max: 1600 }
+            x: {
+              min: trendXDomain?.min,
+              max: trendXDomain?.max
+            }
           }}
         />
       </MainContainer>

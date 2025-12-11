@@ -1,7 +1,7 @@
 import React from 'react'
-import { LayoutDashboard, Thermometer, Wind, LineChart, Menu } from 'lucide-react'
+import { LayoutDashboard, Thermometer, Wind, LineChart, Menu, List, Layers } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
-import { FooterContainer, NavButton, Label, FeatureButton } from './Footer.styles'
+import { FooterContainer, NavButton, Label } from './Footer.styles'
 
 const Footer: React.FC = () => {
   const navigate = useNavigate()
@@ -34,10 +34,21 @@ const Footer: React.FC = () => {
         <Label>TRENDS 1</Label>
       </NavButton>
 
-      <FeatureButton>
-        <LineChart size={iconsSize} />
-        <Label>ELEC TREND 1</Label>
-      </FeatureButton>
+      <NavButton
+        $active={currentPath === '/drive-parameters'}
+        onClick={() => navigate('/drive-parameters')}
+      >
+        <List size={iconsSize} />
+        <Label>DRIVE PARAMS</Label>
+      </NavButton>
+
+      <NavButton
+        $active={currentPath === '/motor-profiles'}
+        onClick={() => navigate('/motor-profiles')}
+      >
+        <Layers size={iconsSize} />
+        <Label>PROFILES</Label>
+      </NavButton>
 
       {/* Config/Menu */}
       <NavButton style={{ marginLeft: 'auto', background: '#0f172a' }}>

@@ -1,5 +1,8 @@
 import { io, Socket, ManagerOptions, SocketOptions } from 'socket.io-client'
 
+// Singleton socket to survive HMR/StrictMode and avoid multiple connections
+let globalSocket: Socket | null = null
+
 export interface ISocketService {
   connect(): void
   disconnect(): void
@@ -20,10 +23,16 @@ export class SocketService implements ISocketService {
   }
 
   public connect(): void {
-    if (this.socket && this.socket.connected) return
+    if (globalSocket) {
+      this.socket = globalSocket
+      if (!this.socket.connected && !this.socket.active) {
+        this.socket.connect()
+      }
+      return
+    }
 
     this.socket = io(this.url, this.options)
-
+    globalSocket = this.socket
     this.setupListeners()
   }
 
@@ -40,6 +49,18 @@ export class SocketService implements ISocketService {
 
     this.socket.on('connect_error', (err) => {
       console.error('Socket connection error:', err)
+    })
+
+    this.socket.on('error', (err) => {
+      console.error('Socket error:', err)
+    })
+
+    this.socket.io.on('reconnect_attempt', (attempt) => {
+      console.warn('Socket reconnect attempt:', attempt)
+    })
+
+    this.socket.io.on('reconnect_failed', () => {
+      console.error('Socket reconnect failed')
     })
   }
 

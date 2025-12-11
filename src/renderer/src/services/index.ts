@@ -13,3 +13,6 @@ export const socketService = new SocketService(SOCKET_CONFIG.URL, SOCKET_CONFIG.
 
 export * from './apiService'
 export * from './socketService'
+export * from './trendLiveGateway'
+export * from './socketEvents'
+export * from './driveService'

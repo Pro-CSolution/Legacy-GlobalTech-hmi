@@ -2,11 +2,23 @@
 // Fuente: config/devices.yaml y parameters.json
 // Ejecutar: bun run generate:types
 
-export const DEVICE_IDS = ['drive_avid'] as const
+export const DEVICE_IDS = ['drive_avid', 'wago'] as const
 
 export type DeviceId = (typeof DEVICE_IDS)[number]
 
 export const PARAMETER_IDS = [
+  'Auto_Speed_SP1',
+  'Conv_Cooling_Start',
+  'Conv_Pump_Auto',
+  'Conv_Pump_Run',
+  'Cooling_Water_Press',
+  'Drive_Coolant_Flow',
+  'Drive_Coolant_Leak',
+  'Drive_Coolant_Press',
+  'Drive_Cooling_Start',
+  'Drive_Cooling_Temp',
+  'Main_CB_Closed_Light',
+  'Motor_Heater_Ctrl',
   'P1.00',
   'P1.01',
   'P1.02',
@@ -65,7 +77,31 @@ export const PARAMETER_IDS = [
   'P9.04',
   'P9.05',
   'P9.06',
-  'P9.08'
+  'P9.08',
+  'RB_Blower_Start',
+  'RB_Breaker_Close',
+  'RB_Breaker_Open',
+  'RB_Drive_OK',
+  'RB_Drive_Reset',
+  'RB_Drive_Running',
+  'RB_Drive_Start',
+  'RB_Estop_Reset',
+  'RB_Estop_Status',
+  'RB_Local_Control',
+  'RB_Main_Brk_Close',
+  'RB_Main_Brk_Open',
+  'RB_Precharge_OK',
+  'RB_Remote_Control',
+  'Remote_Speed_In',
+  'Speed_Out_Drive',
+  'Supply_480VAC_On',
+  'Temp_Bearing_DE',
+  'Temp_Bearing_NDE',
+  'Temp_Winding_A1',
+  'Temp_Winding_B1',
+  'Temp_Winding_C1',
+  'Trans_Cooling_Start',
+  'Wago_Discrete_15'
 ] as const
 
 export type ParameterId = (typeof PARAMETER_IDS)[number]
@@ -142,10 +178,132 @@ export const DEVICE_PARAMETERS: Record<DeviceId, ParameterId[]> = {
     'P11.20',
     'P11.49',
     'P11.50'
+  ] as const,
+  wago: [
+    'Remote_Speed_In',
+    'Auto_Speed_SP1',
+    'Cooling_Water_Press',
+    'Drive_Cooling_Temp',
+    'Temp_Winding_A1',
+    'Temp_Winding_B1',
+    'Temp_Winding_C1',
+    'Temp_Bearing_DE',
+    'Temp_Bearing_NDE',
+    'Speed_Out_Drive',
+    'RB_Local_Control',
+    'RB_Remote_Control',
+    'RB_Breaker_Close',
+    'RB_Breaker_Open',
+    'RB_Estop_Status',
+    'Supply_480VAC_On',
+    'Drive_Coolant_Flow',
+    'Drive_Coolant_Press',
+    'Drive_Coolant_Leak',
+    'Conv_Pump_Run',
+    'Conv_Pump_Auto',
+    'RB_Drive_OK',
+    'RB_Drive_Running',
+    'RB_Precharge_OK',
+    'Conv_Cooling_Start',
+    'Trans_Cooling_Start',
+    'Motor_Heater_Ctrl',
+    'RB_Estop_Reset',
+    'RB_Blower_Start',
+    'RB_Main_Brk_Close',
+    'RB_Main_Brk_Open',
+    'RB_Drive_Start',
+    'RB_Drive_Reset',
+    'Main_CB_Closed_Light',
+    'Drive_Cooling_Start',
+    'Wago_Discrete_15'
   ] as const
 } as const
 
 export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
+  Auto_Speed_SP1: {
+    id: 'Auto_Speed_SP1',
+    name: 'Test Stand A Analog In SP 1',
+    unit: 'Raw',
+    description: 'Test Stand A Analog In SP 1',
+    attributes: ['R'] as const
+  },
+  Conv_Cooling_Start: {
+    id: 'Conv_Cooling_Start',
+    name: 'Converter Cooling Water Pump 1 Start',
+    unit: 'Bool',
+    description: 'Converter Cooling Water Pump 1 Start',
+    attributes: ['R', 'W'] as const
+  },
+  Conv_Pump_Auto: {
+    id: 'Conv_Pump_Auto',
+    name: 'Converter Cooling Water Pump Auto',
+    unit: 'Bool',
+    description: 'Converter Cooling Water Pump Auto',
+    attributes: ['R'] as const
+  },
+  Conv_Pump_Run: {
+    id: 'Conv_Pump_Run',
+    name: 'Converter Cooling Water Pump 1 Running',
+    unit: 'Bool',
+    description: 'Converter Cooling Water Pump 1 Running',
+    attributes: ['R'] as const
+  },
+  Cooling_Water_Press: {
+    id: 'Cooling_Water_Press',
+    name: 'Converter Cooling Water Pressure',
+    unit: 'Raw',
+    description: 'Converter Cooling Water Pressure',
+    attributes: ['R'] as const
+  },
+  Drive_Coolant_Flow: {
+    id: 'Drive_Coolant_Flow',
+    name: 'Drive Coolant Flow',
+    unit: 'Bool',
+    description: 'Drive Coolant Flow',
+    attributes: ['R'] as const
+  },
+  Drive_Coolant_Leak: {
+    id: 'Drive_Coolant_Leak',
+    name: 'Spare',
+    unit: 'Bool',
+    description: 'Spare',
+    attributes: ['R'] as const
+  },
+  Drive_Coolant_Press: {
+    id: 'Drive_Coolant_Press',
+    name: 'Drive Coolant Pressure',
+    unit: 'Bool',
+    description: 'Drive Coolant Pressure',
+    attributes: ['R'] as const
+  },
+  Drive_Cooling_Start: {
+    id: 'Drive_Cooling_Start',
+    name: 'Drive Cooling Water Pump 2 Start',
+    unit: 'Bool',
+    description: 'Drive Cooling Water Pump 2 Start',
+    attributes: ['R', 'W'] as const
+  },
+  Drive_Cooling_Temp: {
+    id: 'Drive_Cooling_Temp',
+    name: 'Drive Cooling Water Temp',
+    unit: 'Raw',
+    description: 'Drive Cooling Water Temp',
+    attributes: ['R'] as const
+  },
+  Main_CB_Closed_Light: {
+    id: 'Main_CB_Closed_Light',
+    name: 'Main CB Closed Light',
+    unit: 'Bool',
+    description: 'Main CB Closed Light',
+    attributes: ['R', 'W'] as const
+  },
+  Motor_Heater_Ctrl: {
+    id: 'Motor_Heater_Ctrl',
+    name: 'Motor Heater Control Relay (DRV Running)',
+    unit: 'Bool',
+    description: 'Motor Heater Control Relay (DRV Running)',
+    attributes: ['R', 'W'] as const
+  },
   'P1.00': {
     id: 'P1.00',
     alias: 'speedReference',
@@ -277,6 +435,7 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     alias: 'warning1',
     name: 'Warning No. 1',
     menu: 10,
+    description: 'Represents Warning No. 1 to Warning No. 10 (P10.00 to P10.09)',
     range: { min: 100, max: 199 },
     attributes: ['R'] as const
   },
@@ -357,6 +516,7 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     alias: 'trip1',
     name: 'Trip No. 1',
     menu: 10,
+    description: 'Represents Trip No. 1 to Trip No. 10 (P10.10 to P10.19)',
     attributes: ['R'] as const
   },
   'P10.11': {
@@ -663,6 +823,176 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     menu: 9,
     range: { min: -9999, max: 9999 },
     attributes: ['R'] as const
+  },
+  RB_Blower_Start: {
+    id: 'RB_Blower_Start',
+    name: 'Relay Booster Pump Motor Blower Start',
+    unit: 'Bool',
+    description: 'Relay Booster Pump Motor Blower Start',
+    attributes: ['R', 'W'] as const
+  },
+  RB_Breaker_Close: {
+    id: 'RB_Breaker_Close',
+    name: 'Relay Booster Breaker Close',
+    unit: 'Bool',
+    description: 'Relay Booster Breaker Close',
+    attributes: ['R'] as const
+  },
+  RB_Breaker_Open: {
+    id: 'RB_Breaker_Open',
+    name: 'Relay Booster Breaker Open',
+    unit: 'Bool',
+    description: 'Relay Booster Breaker Open',
+    attributes: ['R'] as const
+  },
+  RB_Drive_OK: {
+    id: 'RB_Drive_OK',
+    name: 'Relay Booster Pump Drive DO1 Drive OK',
+    unit: 'Bool',
+    description: 'Relay Booster Pump Drive DO1 Drive OK',
+    attributes: ['R'] as const
+  },
+  RB_Drive_Reset: {
+    id: 'RB_Drive_Reset',
+    name: 'Relay Booster Pump Drive Reset',
+    unit: 'Bool',
+    description: 'Relay Booster Pump Drive Reset',
+    attributes: ['R', 'W'] as const
+  },
+  RB_Drive_Running: {
+    id: 'RB_Drive_Running',
+    name: 'Relay Booster Pump Drive DO2 Drive Running',
+    unit: 'Bool',
+    description: 'Relay Booster Pump Drive DO2 Drive Running',
+    attributes: ['R'] as const
+  },
+  RB_Drive_Start: {
+    id: 'RB_Drive_Start',
+    name: 'Relay Booster Pump Drive Start',
+    unit: 'Bool',
+    description: 'Relay Booster Pump Drive Start',
+    attributes: ['R', 'W'] as const
+  },
+  RB_Estop_Reset: {
+    id: 'RB_Estop_Reset',
+    name: 'Relay Pump E-Stop Reset',
+    unit: 'Bool',
+    description: 'Relay Pump E-Stop Reset',
+    attributes: ['R', 'W'] as const
+  },
+  RB_Estop_Status: {
+    id: 'RB_Estop_Status',
+    name: 'Relay Booster E-Stop Status',
+    unit: 'Bool',
+    description: 'Relay Booster E-Stop Status',
+    attributes: ['R'] as const
+  },
+  RB_Local_Control: {
+    id: 'RB_Local_Control',
+    name: 'Relay Booster Local Control',
+    unit: 'Bool',
+    description: 'Relay Booster Local Control',
+    attributes: ['R'] as const
+  },
+  RB_Main_Brk_Close: {
+    id: 'RB_Main_Brk_Close',
+    name: 'Relay Pump Main Breaker Close',
+    unit: 'Bool',
+    description: 'Relay Pump Main Breaker Close',
+    attributes: ['R', 'W'] as const
+  },
+  RB_Main_Brk_Open: {
+    id: 'RB_Main_Brk_Open',
+    name: 'Relay Booster Main Breaker Open',
+    unit: 'Bool',
+    description: 'Relay Booster Main Breaker Open',
+    attributes: ['R', 'W'] as const
+  },
+  RB_Precharge_OK: {
+    id: 'RB_Precharge_OK',
+    name: 'Relay Booster Pump Drive DO3 Precharge Complete',
+    unit: 'Bool',
+    description: 'Relay Booster Pump Drive DO3 Precharge Complete',
+    attributes: ['R'] as const
+  },
+  RB_Remote_Control: {
+    id: 'RB_Remote_Control',
+    name: 'Relay Booster Remote Control',
+    unit: 'Bool',
+    description: 'Relay Booster Remote Control',
+    attributes: ['R'] as const
+  },
+  Remote_Speed_In: {
+    id: 'Remote_Speed_In',
+    name: 'Test Stand A Remote SPD IN',
+    unit: 'Raw',
+    description: 'Test Stand A Remote SPD IN',
+    attributes: ['R'] as const
+  },
+  Speed_Out_Drive: {
+    id: 'Speed_Out_Drive',
+    name: 'Relay Booster Pump Speed Ref to Drive',
+    unit: 'Raw',
+    description: 'Relay Booster Pump Speed Ref to Drive',
+    attributes: ['R', 'W'] as const
+  },
+  Supply_480VAC_On: {
+    id: 'Supply_480VAC_On',
+    name: '480VAC Supply ON',
+    unit: 'Bool',
+    description: '480VAC Supply ON',
+    attributes: ['R'] as const
+  },
+  Temp_Bearing_DE: {
+    id: 'Temp_Bearing_DE',
+    name: 'Test Motor A Temp Bearing Drive End',
+    unit: 'Raw',
+    description: 'Test Motor A Temp Bearing Drive End',
+    attributes: ['R'] as const
+  },
+  Temp_Bearing_NDE: {
+    id: 'Temp_Bearing_NDE',
+    name: 'Test Motor A Temp Bearing Non-Drive End',
+    unit: 'Raw',
+    description: 'Test Motor A Temp Bearing Non-Drive End',
+    attributes: ['R'] as const
+  },
+  Temp_Winding_A1: {
+    id: 'Temp_Winding_A1',
+    alias: 'temperaturexdd',
+    name: 'Test Motor A Temp Winding A1',
+    unit: 'Raw',
+    description: 'Test Motor A Temp Winding A1',
+    attributes: ['R'] as const
+  },
+  Temp_Winding_B1: {
+    id: 'Temp_Winding_B1',
+    name: 'Test Motor A Temp Winding B1',
+    unit: 'Raw',
+    description: 'Test Motor A Temp Winding B1',
+    attributes: ['R'] as const
+  },
+  Temp_Winding_C1: {
+    id: 'Temp_Winding_C1',
+    name: 'Test Motor A Temp Winding C1',
+    unit: 'Raw',
+    description: 'Test Motor A Temp Winding C1',
+    attributes: ['R'] as const
+  },
+  Trans_Cooling_Start: {
+    id: 'Trans_Cooling_Start',
+    name: 'Transformer Cooling Fan Start',
+    unit: 'Bool',
+    description: 'Transformer Cooling Fan Start',
+    attributes: ['R', 'W'] as const
+  },
+  Wago_Discrete_15: {
+    id: 'Wago_Discrete_15',
+    alias: 'wagoDiscrete15',
+    name: 'Wago discrete test @15',
+    unit: 'Bool',
+    description: 'Discrete input at address 15 for trend validation',
+    attributes: ['R'] as const
   }
 } as const
 
@@ -725,7 +1055,9 @@ export const PARAMETER_ALIASES = {
   torqueDemand: 'P9.04',
   motorCurrentP9: 'P9.05',
   driveCurrent: 'P9.06',
-  motorPowerP9: 'P9.08'
+  motorPowerP9: 'P9.08',
+  temperaturexdd: 'Temp_Winding_A1',
+  wagoDiscrete15: 'Wago_Discrete_15'
 } as const
 
 export type ParameterAlias = keyof typeof PARAMETER_ALIASES

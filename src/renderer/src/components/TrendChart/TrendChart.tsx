@@ -7,18 +7,8 @@ import {
   useCallback,
   useMemo
 } from 'react'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-} from 'chart.js'
-import type { ChartOptions, ChartData } from 'chart.js'
-import { Line } from 'react-chartjs-2'
+import uPlot from 'uplot'
+import 'uplot/dist/uPlot.min.css'
 import { useTheme } from 'styled-components'
 import {
   Container,
@@ -30,7 +20,13 @@ import {
   ErrorContainer,
   ErrorTitle,
   ErrorMessage,
-  NoDataContainer
+  NoDataContainer,
+  LegendContainer,
+  LegendItem,
+  LegendDot,
+  TooltipContainer,
+  TooltipRow,
+  TooltipHeader
 } from './TrendChart.styles'
 import type {
   TrendChartProps,
@@ -39,9 +35,6 @@ import type {
   ChartDataPoint,
   DemoDataConfig
 } from './TrendChart.types'
-
-// Register Chart.js components
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
 
 // === Constants ===
 const DEFAULT_TIME_WINDOW = 5 // minutes
@@ -82,6 +75,62 @@ const generateInitialDemoData = (
   return data
 }
 
+// === Helpers ===
+type UPlotData = {
+  data: uPlot.AlignedData
+  xValues: number[]
+  seriesValues: (number | null)[][]
+}
+
+const buildUPlotData = (datasets: Dataset[]): UPlotData => {
+  if (!datasets.length) return { data: [], xValues: [], seriesValues: [] }
+
+  const timelineMap = new Map<number, Array<number | null>>()
+  datasets.forEach((ds, dsIdx) => {
+    ds.data.forEach((point) => {
+      const values = timelineMap.get(point.x) ?? Array.from({ length: datasets.length }, () => null)
+      values[dsIdx] = point.y
+      timelineMap.set(point.x, values)
+    })
+  })
+
+  const xValues = Array.from(timelineMap.keys()).sort((a, b) => a - b)
+  const seriesValues = Array.from({ length: datasets.length }, () =>
+    new Array(xValues.length).fill(null)
+  )
+
+  xValues.forEach((x, idx) => {
+    const vals = timelineMap.get(x) || []
+    vals.forEach((v, seriesIdx) => {
+      seriesValues[seriesIdx][idx] = v
+    })
+  })
+
+  const data = [xValues, ...seriesValues] as uPlot.AlignedData
+
+  return {
+    data,
+    xValues,
+    seriesValues
+  }
+}
+
+const findNearestPoint = (
+  seriesValues: (number | null)[][],
+  datasets: Dataset[],
+  xValues: number[],
+  idx: number
+): { datasetIndex: number; point: ChartDataPoint } | null => {
+  if (!seriesValues.length || !xValues.length) return null
+  for (let i = 0; i < seriesValues.length; i++) {
+    const val = seriesValues[i][idx]
+    if (val !== null && datasets[i]) {
+      return { datasetIndex: i, point: { x: xValues[idx] ?? 0, y: val } }
+    }
+  }
+  return null
+}
+
 // === Main Component ===
 const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
   (
@@ -105,7 +154,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       showLegend = false,
       showTooltips = true,
       responsive = true,
-      maintainAspectRatio = false,
+      maintainAspectRatio = false, // kept for API parity (ResizeObserver handles sizing)
       showTitle = true,
       title = 'Trend',
       className,
@@ -116,12 +165,24 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
     ref
   ) => {
     const theme = useTheme()
-    const chartRef = useRef<ChartJS<'line'>>(null)
+    void maintainAspectRatio // API compat: handled by ResizeObserver
+    const plotContainerRef = useRef<HTMLDivElement>(null)
+    const plotInstanceRef = useRef<uPlot | null>(null)
+    const resizeObserverRef = useRef<ResizeObserver | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const [internalDatasets, setInternalDatasets] = useState<Dataset[]>([])
+    const [overrideDatasets, setOverrideDatasets] = useState<Dataset[] | null>(null)
+    const [tooltipState, setTooltipState] = useState<{
+      idx: number
+      left: number
+      top: number
+    } | null>(null)
     const startTimeRef = useRef<number>(Date.now())
     const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+    const latestDataRef = useRef<UPlotData>({ data: [], xValues: [], seriesValues: [] })
+    const latestDatasetsRef = useRef<Dataset[]>([])
+    const clickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null)
 
     // Memoize demo config with defaults
     const mergedDemoConfig = useMemo<DemoDataConfig>(
@@ -150,7 +211,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       [theme, textColor, gridColor, borderColor, backgroundColor, lineColor]
     )
 
-    // Format time for X axis (converts seconds to "Xm" format)
+    // Format time for X axis (converts seconds to "Xm" format when relative)
     const formatTimeLabel = useCallback((seconds: number): string => {
       const minutes = Math.floor(seconds / SECONDS_PER_MINUTE)
       return `${minutes}m`
@@ -244,190 +305,313 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       }
     }, [demoData, externalDatasets])
 
-    // Get active datasets (internal for demo, external otherwise)
-    const activeDatasets = demoData ? internalDatasets : externalDatasets || []
+    // Get active datasets (internal/demo, or override, else external)
+    const activeDatasets = useMemo(
+      () => overrideDatasets || (demoData ? internalDatasets : externalDatasets || []),
+      [overrideDatasets, demoData, internalDatasets, externalDatasets]
+    )
 
-    // Chart data configuration
-    const chartData: ChartData<'line'> = useMemo(
-      () => ({
-        datasets: activeDatasets.map((dataset, index) => ({
-          data: dataset.data,
-          borderColor:
-            dataset.borderColor || (index === 0 ? colors.line : theme.colors.accent.secondary),
-          backgroundColor: dataset.backgroundColor || 'transparent',
-          borderWidth: dataset.borderWidth || 1.5,
-          fill: dataset.fill || false,
-          tension: dataset.tension || 0.2,
-          pointRadius: dataset.pointRadius || 0,
-          pointHoverRadius: dataset.pointHoverRadius || 4,
-          label: dataset.label || `Dataset ${index + 1}`
-        }))
-      }),
+    const hasExternalData = useMemo(
+      () => !demoData && activeDatasets.length > 0,
+      [demoData, activeDatasets.length]
+    )
+
+    // Resuelve el máximo de X para formatear etiquetas (si no se define, se deja auto)
+    const resolvedXMax = useMemo(() => {
+      if (typeof scales?.x?.max === 'number') return scales.x.max
+      if (!hasExternalData) return timeWindow * SECONDS_PER_MINUTE
+      return undefined
+    }, [scales?.x?.max, hasExternalData, timeWindow])
+
+    // uPlot data
+    const uplotData = useMemo(() => buildUPlotData(activeDatasets), [activeDatasets])
+
+    useEffect(() => {
+      latestDataRef.current = uplotData
+      latestDatasetsRef.current = activeDatasets
+    }, [uplotData, activeDatasets])
+
+    // uPlot series styles
+    const uPlotSeries = useMemo(
+      () =>
+        [
+          { label: 'Time' },
+          ...activeDatasets.map((dataset, index) => ({
+            label: dataset.label || `Dataset ${index + 1}`,
+            stroke:
+              dataset.borderColor || (index === 0 ? colors.line : theme.colors.accent.secondary),
+            width: dataset.borderWidth || 1.5,
+            fill: dataset.fill ? dataset.backgroundColor || 'transparent' : undefined,
+            points: { show: false }
+          }))
+        ] satisfies uPlot.Series[],
       [activeDatasets, colors.line, theme.colors.accent.secondary]
     )
 
-    // Chart options configuration
-    const chartOptions: ChartOptions<'line'> = useMemo(
-      () => ({
-        responsive,
-        maintainAspectRatio,
-        animation: {
-          duration: 0 // Disable animations for real-time performance
-        },
-        interaction: {
-          intersect: false,
-          mode: 'index' as const
-        },
-        plugins: {
-          legend: {
-            display: showLegend,
-            labels: {
-              color: colors.text,
-              font: {
-                family: theme.typography.fontFamily,
-                size: 11
-              }
+    const applyScales = useCallback(
+      (plot: uPlot) => {
+        const xMin = scales?.x?.min ?? undefined
+        const xMax = resolvedXMax ?? undefined
+        const yMin = scales?.y?.min ?? undefined
+        const yMax = scales?.y?.max ?? undefined
+
+        if (xMin !== undefined || xMax !== undefined) {
+          const nextMin = xMin ?? plot.scales.x.min ?? null
+          const nextMax = xMax ?? plot.scales.x.max ?? null
+          if (nextMin !== null && nextMax !== null) {
+            plot.setScale('x', { min: nextMin, max: nextMax })
+          }
+        }
+
+        if (yMin !== undefined || yMax !== undefined) {
+          const nextMin = yMin ?? plot.scales.y.min ?? null
+          const nextMax = yMax ?? plot.scales.y.max ?? null
+          if (nextMin !== null && nextMax !== null) {
+            plot.setScale('y', { min: nextMin, max: nextMax })
+          }
+        }
+      },
+      [scales?.x?.min, scales?.y?.min, scales?.y?.max, resolvedXMax]
+    )
+
+    const xTickFormatter = useCallback(
+      (val: number) => {
+        const customCallback = scales?.x?.ticks?.callback as
+          | ((value: number) => string | number)
+          | undefined
+
+        if (customCallback) {
+          const maybe = customCallback(val)
+          return typeof maybe === 'string' || typeof maybe === 'number'
+            ? maybe
+            : formatTimeLabel(val)
+        }
+
+        if (typeof resolvedXMax === 'number') {
+          const remaining = Math.max(resolvedXMax - val, 0)
+          const minutes = Math.floor(remaining / SECONDS_PER_MINUTE)
+          return `${minutes}m`
+        }
+
+        return formatTimeLabel(val)
+      },
+      [scales?.x?.ticks, resolvedXMax, formatTimeLabel]
+    )
+
+    const yTickFormatter = useCallback(
+      (val: number) => {
+        const ticks = scales?.y?.ticks as { callback?: (value: number) => string | number }
+        const custom = ticks?.callback
+        if (custom) {
+          const maybe = custom(val)
+          if (typeof maybe === 'string' || typeof maybe === 'number') return maybe
+        }
+        return Number.isFinite(val) ? val.toFixed(0) : ''
+      },
+      [scales?.y?.ticks]
+    )
+
+    const destroyPlot = useCallback(() => {
+      if (resizeObserverRef.current && plotContainerRef.current) {
+        resizeObserverRef.current.disconnect()
+        resizeObserverRef.current = null
+      }
+      if (plotContainerRef.current && clickHandlerRef.current) {
+        plotContainerRef.current.removeEventListener('click', clickHandlerRef.current)
+        clickHandlerRef.current = null
+      }
+      if (plotInstanceRef.current) {
+        plotInstanceRef.current.destroy()
+        plotInstanceRef.current = null
+      }
+    }, [])
+
+    const handleSetCursor = useCallback(
+      (plot: uPlot) => {
+        const idx = plot.cursor.idx
+        if (idx == null || idx < 0) {
+          setTooltipState(null)
+          if (onHover) onHover(undefined, [])
+          return
+        }
+
+        const left = plot.cursor.left ?? 0
+        const top = plot.cursor.top ?? 0
+        setTooltipState({ idx, left, top })
+
+        if (onHover) {
+          const hit = findNearestPoint(
+            latestDataRef.current.seriesValues,
+            latestDatasetsRef.current,
+            latestDataRef.current.xValues,
+            idx
+          )
+          if (hit) {
+            onHover(undefined, [{ datasetIndex: hit.datasetIndex, index: idx }])
+          }
+        }
+      },
+      [onHover]
+    )
+
+    const createPlot = useCallback(() => {
+      const container = plotContainerRef.current
+      if (!container || !uplotData.data.length) return
+
+      destroyPlot()
+
+      const { width: boxWidth, height: boxHeight } = container.getBoundingClientRect()
+      const baseWidth = boxWidth || (typeof width === 'number' ? width : 400)
+      const baseHeight = boxHeight || (typeof height === 'number' ? height : 300)
+
+      const plot = new uPlot(
+        {
+          width: baseWidth,
+          height: baseHeight,
+          series: uPlotSeries,
+          axes: [
+            {
+              show: scales?.x?.display !== false,
+              stroke: colors.text,
+              grid: {
+                show: showGrid && scales?.x?.grid !== false,
+                stroke: colors.grid,
+                width: 1
+              },
+              ticks: {
+                show: true,
+                stroke: colors.grid,
+                width: 1
+              },
+              values: (_, vals) => vals.map((v) => xTickFormatter(v as number)),
+              space: 50
+            },
+            {
+              show: scales?.y?.display !== false,
+              stroke: colors.text,
+              grid: {
+                show: showGrid && scales?.y?.grid !== false,
+                stroke: colors.grid,
+                width: 1
+              },
+              values: (_, vals) => vals.map((v) => yTickFormatter(v as number)),
+              space: 40
             }
+          ],
+          scales: {
+            x: { time: false },
+            y: { auto: true }
           },
-          tooltip: {
-            enabled: showTooltips,
-            backgroundColor: colors.tooltip,
-            titleColor: theme.colors.text.primary,
-            bodyColor: theme.colors.text.primary,
-            borderColor: colors.border,
-            borderWidth: 1,
-            callbacks: {
-              title: (items) => {
-                if (items.length > 0) {
-                  const seconds = items[0].parsed.x || 0
-                  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE)
-                  const secs = Math.floor(seconds % SECONDS_PER_MINUTE)
-                  return `${minutes}m ${secs}s`
-                }
-                return ''
-              },
-              label: (item) => {
-                return `${item.dataset.label}: ${item.parsed.y?.toFixed(1)}`
-              }
-            }
-          }
-        },
-        scales: {
-          x: {
-            type: 'linear' as const,
-            display: scales?.x?.display !== false,
-            min: scales?.x?.min ?? 0,
-            max: scales?.x?.max ?? timeWindow * SECONDS_PER_MINUTE,
-            grid: {
-              display: showGrid && scales?.x?.grid !== false,
-              color: colors.grid
-            },
-            ticks: {
-              color: colors.text,
-              font: {
-                family: theme.typography.fontFamily,
-                size: 15
-              },
-              stepSize: SECONDS_PER_MINUTE, // One tick per minute
-              maxTicksLimit: timeWindow + 1,
-              callback: function (value) {
-                return formatTimeLabel(value as number)
-              },
-              ...(scales?.x?.ticks as object)
-            },
-            title: scales?.x?.title
-              ? {
-                  display: scales.x.title.display,
-                  text: scales.x.title.text,
-                  color: colors.text,
-                  font: {
-                    family: theme.typography.fontFamily,
-                    size: 11
-                  }
-                }
-              : undefined
+          cursor: {
+            points: { show: false },
+            drag: { x: false, y: false }
           },
-          y: {
-            display: scales?.y?.display !== false,
-            min: scales?.y?.min,
-            max: scales?.y?.max,
-            grid: {
-              display: showGrid && scales?.y?.grid !== false,
-              color: colors.grid
-            },
-            ticks: {
-              color: colors.text,
-              font: {
-                family: theme.typography.fontFamily,
-                size: 15
-              }
-            },
-            title: scales?.y?.title
-              ? {
-                  display: scales.y.title.display,
-                  text: scales.y.title.text,
-                  color: colors.text,
-                  font: {
-                    family: theme.typography.fontFamily,
-                    size: 11
-                  }
-                }
-              : undefined
+          legend: { show: false },
+          hooks: {
+            setCursor: [handleSetCursor]
           }
         },
-        onClick: (_, elements) => {
-          if (onDataPointClick && elements.length > 0) {
-            const element = elements[0]
-            const datasetIndex = element.datasetIndex
-            const dataIndex = element.index
-            const point = activeDatasets[datasetIndex]?.data[dataIndex]
-            if (point) {
-              onDataPointClick(point, datasetIndex)
-            }
-          }
-        },
-        onHover: onHover as ChartOptions<'line'>['onHover']
-      }),
-      [
-        responsive,
-        maintainAspectRatio,
-        showLegend,
-        showTooltips,
-        showGrid,
-        colors,
-        theme,
-        scales,
-        timeWindow,
-        formatTimeLabel,
-        activeDatasets,
-        onDataPointClick,
-        onHover
-      ]
+        uplotData.data,
+        container
+      )
+
+      plotInstanceRef.current = plot
+      applyScales(plot)
+
+      if (responsive) {
+        resizeObserverRef.current = new ResizeObserver((entries) => {
+          const entry = entries[0]
+          if (!entry || !plotInstanceRef.current) return
+          const nextWidth = entry.contentRect.width
+          const nextHeight = entry.contentRect.height
+          plotInstanceRef.current.setSize({ width: nextWidth, height: nextHeight })
+        })
+        resizeObserverRef.current.observe(container)
+      }
+
+      const clickHandler = () => {
+        const idx = plot.cursor.idx
+        if (idx == null || idx < 0 || !onDataPointClick) return
+        const hit = findNearestPoint(
+          latestDataRef.current.seriesValues,
+          latestDatasetsRef.current,
+          latestDataRef.current.xValues,
+          idx
+        )
+        if (hit) onDataPointClick(hit.point, hit.datasetIndex)
+      }
+
+      clickHandlerRef.current = clickHandler
+      container.addEventListener('click', clickHandler)
+    }, [
+      applyScales,
+      colors.grid,
+      colors.text,
+      handleSetCursor,
+      destroyPlot,
+      height,
+      onDataPointClick,
+      responsive,
+      scales?.x?.display,
+      scales?.x?.grid,
+      scales?.y?.display,
+      scales?.y?.grid,
+      showGrid,
+      xTickFormatter,
+      yTickFormatter,
+      uPlotSeries,
+      uplotData.data,
+      width
+    ])
+
+    // Create / update plot
+    useEffect(() => {
+      if (!plotContainerRef.current) return
+
+      if (!uplotData.data.length) {
+        destroyPlot()
+        return
+      }
+
+      const currentSeriesCount = plotInstanceRef.current?.series.length || 0
+      const expectedSeriesCount = uPlotSeries.length
+
+      const needsRecreate = currentSeriesCount !== expectedSeriesCount
+
+      if (needsRecreate || !plotInstanceRef.current) {
+        createPlot()
+      } else {
+        plotInstanceRef.current.setData(uplotData.data)
+        applyScales(plotInstanceRef.current)
+      }
+
+      return () => {
+        // cleanup handled separately on unmount
+      }
+    }, [uPlotSeries, uPlotSeries.length, uplotData, createPlot, applyScales, destroyPlot])
+
+    // Cleanup on unmount
+    useEffect(
+      () => () => {
+        destroyPlot()
+        if (plotContainerRef.current && clickHandlerRef.current) {
+          plotContainerRef.current.removeEventListener('click', clickHandlerRef.current)
+        }
+      },
+      [destroyPlot]
     )
 
     // Expose ref methods
     useImperativeHandle(ref, () => ({
-      getChart: () => chartRef.current,
+      getChart: () => plotInstanceRef.current,
       updateData: (newDatasets: Dataset[]) => {
-        if (chartRef.current) {
-          chartRef.current.data.datasets = newDatasets.map((dataset, index) => ({
-            data: dataset.data,
-            borderColor:
-              dataset.borderColor || (index === 0 ? colors.line : theme.colors.accent.secondary),
-            backgroundColor: dataset.backgroundColor || 'transparent',
-            borderWidth: dataset.borderWidth || 1.5,
-            fill: dataset.fill || false,
-            tension: dataset.tension || 0.2,
-            pointRadius: dataset.pointRadius || 0,
-            pointHoverRadius: dataset.pointHoverRadius || 4,
-            label: dataset.label || `Dataset ${index + 1}`
-          }))
-          chartRef.current.update('none')
-        }
+        setOverrideDatasets(newDatasets)
       },
       reset: () => {
-        if (chartRef.current) {
-          chartRef.current.reset()
+        setOverrideDatasets(null)
+        if (plotInstanceRef.current && uplotData.data.length) {
+          plotInstanceRef.current.setData(uplotData.data)
+          applyScales(plotInstanceRef.current)
         }
         if (demoData) {
           startTimeRef.current = Date.now()
@@ -519,7 +703,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
     }
 
     // Render no data state
-    if (activeDatasets.length === 0) {
+    if (activeDatasets.length === 0 || uplotData.data.length === 0) {
       return (
         <Container
           variant={variant}
@@ -541,7 +725,6 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       )
     }
 
-    // Render chart
     return (
       <Container
         variant={variant}
@@ -560,7 +743,68 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
           </TitleBar>
         )}
         <ChartWrapper>
-          <Line ref={chartRef} data={chartData} options={chartOptions} />
+          <div ref={plotContainerRef} style={{ width: '100%', height: '100%' }} />
+
+          {showLegend && (
+            <LegendContainer>
+              {activeDatasets.map((ds, idx) => (
+                <LegendItem key={idx}>
+                  <LegendDot
+                    style={{
+                      background:
+                        ds.borderColor || (idx === 0 ? colors.line : theme.colors.accent.secondary)
+                    }}
+                  />
+                  <span>{ds.label || `Dataset ${idx + 1}`}</span>
+                </LegendItem>
+              ))}
+            </LegendContainer>
+          )}
+
+          {showTooltips && tooltipState && uplotData.data.length > 0 && (
+            <TooltipContainer style={{ left: tooltipState.left + 12, top: tooltipState.top + 12 }}>
+              <TooltipHeader>
+                {(() => {
+                  const ts = uplotData.xValues[tooltipState.idx]
+                  const isRelativeTime = ts < 1e8
+                  if (typeof resolvedXMax === 'number') {
+                    const remaining = Math.max(resolvedXMax - ts, 0)
+                    const minutes = Math.floor(remaining / SECONDS_PER_MINUTE)
+                    const seconds = Math.floor(remaining % SECONDS_PER_MINUTE)
+                    return `${minutes}m ${seconds}s`
+                  }
+                  if (isRelativeTime) {
+                    const minutes = Math.floor(ts / SECONDS_PER_MINUTE)
+                    const seconds = Math.floor(ts % SECONDS_PER_MINUTE)
+                    return `${minutes}m ${seconds}s`
+                  }
+                  const date = new Date(ts * 1000)
+                  return date.toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                  })
+                })()}
+              </TooltipHeader>
+              {activeDatasets.map((ds, idx) => {
+                const val = uplotData.seriesValues[idx]?.[tooltipState.idx]
+                if (val === null || val === undefined) return null
+                return (
+                  <TooltipRow key={`${ds.label ?? idx}-${tooltipState.idx}`}>
+                    <LegendDot
+                      style={{
+                        background:
+                          ds.borderColor ||
+                          (idx === 0 ? colors.line : theme.colors.accent.secondary)
+                      }}
+                    />
+                    <span>{ds.label || `Dataset ${idx + 1}`}</span>
+                    <span>{val.toFixed(1)}</span>
+                  </TooltipRow>
+                )
+              })}
+            </TooltipContainer>
+          )}
         </ChartWrapper>
       </Container>
     )
