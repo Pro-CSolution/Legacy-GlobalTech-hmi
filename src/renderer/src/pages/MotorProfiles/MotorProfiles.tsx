@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react'
 import styled from 'styled-components'
 import { ScreenLayout } from 'layouts'
-import { Plus, Edit2, Trash2, Layers, Palette, Settings, Sliders, Gauge, Sparkles, Bolt, Atom } from 'lucide-react'
+import { Plus, Edit2, Trash2, Layers } from 'lucide-react'
 import { Profile } from 'types/profile'
 import { getProfiles, createProfile, updateProfile, deleteProfile } from 'services/profileService'
 import { HoldButton } from 'components/HoldButton/HoldButton'
 import { ProfileEditorModal } from './components/ProfileEditorModal'
 import { ApplyProfileOverlay } from './components/ApplyProfileOverlay'
 import * as Icons from 'lucide-react'
+import { ConfirmModal } from 'components/Modal'
 
 // --- Styled Components ---
 
@@ -139,7 +140,7 @@ const ActionButton = styled.button`
   padding: 10px;
   border-radius: ${({ theme }) => theme.borderRadius.md};
   cursor: pointer;
-  
+
   &:hover {
     background: ${({ theme }) => theme.colors.background.primary};
   }
@@ -159,7 +160,7 @@ const PageButton = styled.button`
   padding: 8px 16px;
   border-radius: ${({ theme }) => theme.borderRadius.sm};
   cursor: pointer;
-  
+
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -174,17 +175,23 @@ const MotorProfiles: React.FC = () => {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
-  
+
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
-  
+
   const [applyingProfile, setApplyingProfile] = useState<Profile | null>(null)
+  const [profileToDelete, setProfileToDelete] = useState<Profile | null>(null)
 
   const loadData = async () => {
     setLoading(true)
     try {
       const data = await getProfiles()
-      setProfiles(data)
+      const sorted = [...data].sort((a, b) => {
+        const da = a.created_at ? new Date(a.created_at).getTime() : 0
+        const db = b.created_at ? new Date(b.created_at).getTime() : 0
+        return db - da // newest first
+      })
+      setProfiles(sorted)
     } catch (err) {
       console.error('Failed to load profiles', err)
     } finally {
@@ -206,14 +213,14 @@ const MotorProfiles: React.FC = () => {
     setEditorOpen(true)
   }
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this profile?')) {
-      try {
-        await deleteProfile(id)
-        loadData()
-      } catch (err) {
-        console.error(err)
-      }
+  const handleDelete = async () => {
+    if (!profileToDelete) return
+    try {
+      await deleteProfile(profileToDelete.id)
+      setProfileToDelete(null)
+      loadData()
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -221,7 +228,7 @@ const MotorProfiles: React.FC = () => {
     if (editingProfile) {
       await updateProfile(editingProfile.id, data)
     } else {
-      await createProfile(data as any)
+      await createProfile(data as Omit<Profile, 'id' | 'created_at' | 'last_used'>)
     }
     loadData()
   }
@@ -249,85 +256,98 @@ const MotorProfiles: React.FC = () => {
         {loading && <div style={{ color: 'white' }}>Loading...</div>}
 
         <Grid>
-          {currentProfiles.map(p => {
-             const IconComp = (Icons as any)[p.icon] || Icons.HelpCircle
-             const deviceCount = new Set(p.parameters.map(param => param.device_id)).size
-             
-             return (
-               <ProfileCard key={p.id} $color={p.color}>
-                 <div>
-                    <CardHeader>
-                      <IconBox $color={p.color}>
-                        <IconComp size={32} />
-                      </IconBox>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                         <ActionButton onClick={() => handleEdit(p)}>
-                           <Edit2 size={18} />
-                         </ActionButton>
-                         <ActionButton onClick={() => handleDelete(p.id)}>
-                           <Trash2 size={18} color="#ef4444" />
-                         </ActionButton>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardTitle>{p.name}</CardTitle>
-                    <Stats>
-                      <span>{p.parameters.length} Parameters</span>
-                      <span>•</span>
-                      <span>{deviceCount} Device{deviceCount !== 1 ? 's' : ''}</span>
-                    </Stats>
-                 </div>
+          {currentProfiles.map((p) => {
+            const IconRaw = Icons[p.icon as keyof typeof Icons]
+            const IconComp = (IconRaw as React.ComponentType<{ size?: number }>) || Icons.HelpCircle
+            const deviceCount = new Set(p.parameters.map((param) => param.device_id)).size
 
-                 <Actions>
-                   <HoldButton 
-                     color={p.color} 
-                     onHoldComplete={() => handleApply(p)}
-                   >
-                     HOLD TO APPLY
-                   </HoldButton>
-                 </Actions>
-               </ProfileCard>
-             )
+            return (
+              <ProfileCard key={p.id} $color={p.color}>
+                <div>
+                  <CardHeader>
+                    <IconBox $color={p.color}>
+                      <IconComp size={32} />
+                    </IconBox>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <ActionButton onClick={() => handleEdit(p)}>
+                        <Edit2 size={18} />
+                      </ActionButton>
+                      <ActionButton onClick={() => setProfileToDelete(p)}>
+                        <Trash2 size={18} color="#ef4444" />
+                      </ActionButton>
+                    </div>
+                  </CardHeader>
+
+                  <CardTitle>{p.name}</CardTitle>
+                  <Stats>
+                    <span>{p.parameters.length} Parameters</span>
+                    <span>•</span>
+                    <span>
+                      {deviceCount} Device{deviceCount !== 1 ? 's' : ''}
+                    </span>
+                  </Stats>
+                </div>
+
+                <Actions>
+                  <HoldButton color={p.color} onHoldComplete={() => handleApply(p)}>
+                    HOLD TO APPLY
+                  </HoldButton>
+                </Actions>
+              </ProfileCard>
+            )
           })}
           {/* Empty Placeholders if needed to maintain grid shape? Not strictly required by grid css */}
         </Grid>
 
         {totalPages > 1 && (
           <Pagination>
-            <PageButton disabled={page === 1} onClick={() => setPage(p => p - 1)}>
+            <PageButton disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
               Previous
             </PageButton>
             <span style={{ color: 'white', alignSelf: 'center' }}>
               Page {page} of {totalPages}
             </span>
-            <PageButton disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>
+            <PageButton disabled={page === totalPages} onClick={() => setPage((p) => p + 1)}>
               Next
             </PageButton>
           </Pagination>
         )}
 
-        <ProfileEditorModal 
-          isOpen={editorOpen} 
-          onClose={() => setEditorOpen(false)} 
+        <ProfileEditorModal
+          isOpen={editorOpen}
+          onClose={() => setEditorOpen(false)}
           initialProfile={editingProfile}
           onSave={handleSaveProfile}
         />
 
         {applyingProfile && (
-          <ApplyProfileOverlay 
-            profile={applyingProfile} 
+          <ApplyProfileOverlay
+            profile={applyingProfile}
             onClose={() => {
-                setApplyingProfile(null)
-                loadData() // Reload to update 'last used'
+              setApplyingProfile(null)
+              loadData() // Reload to update 'last used'
             }}
             onCancel={() => setApplyingProfile(null)}
           />
         )}
 
+        <ConfirmModal
+          isOpen={!!profileToDelete}
+          title="Delete profile"
+          message={
+            profileToDelete
+              ? `Are you sure you want to delete the profile "${profileToDelete.name}"?`
+              : ''
+          }
+          confirmLabel="Delete"
+          cancelLabel="Cancel"
+          tone="danger"
+          onConfirm={handleDelete}
+          onCancel={() => setProfileToDelete(null)}
+        />
       </PageContainer>
     </ScreenLayout>
   )
 }
 
 export default MotorProfiles
-

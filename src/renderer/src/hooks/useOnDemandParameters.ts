@@ -39,3 +39,12 @@ export const useOnDemandParameters = ({ deviceId, parameterIds, limit = 18 }: Us
 
 
 
+
+
+
+
+
+
+
+
+

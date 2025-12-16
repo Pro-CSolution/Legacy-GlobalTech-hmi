@@ -4,6 +4,7 @@ export interface IApiService {
   get<T, P = Record<string, unknown>>(url: string, params?: P): Promise<T>
   post<T, D = unknown>(url: string, data?: D): Promise<T>
   put<T, D = unknown>(url: string, data?: D): Promise<T>
+  patch<T, D = unknown>(url: string, data?: D): Promise<T>
   delete<T>(url: string): Promise<T>
 }
 
@@ -51,6 +52,10 @@ export class ApiService implements IApiService {
 
   public put<T, D = unknown>(url: string, data?: D): Promise<T> {
     return this.axiosInstance.put(url, data).then((res) => res.data)
+  }
+
+  public patch<T, D = unknown>(url: string, data?: D): Promise<T> {
+    return this.axiosInstance.patch(url, data).then((res) => res.data)
   }
 
   public delete<T>(url: string): Promise<T> {

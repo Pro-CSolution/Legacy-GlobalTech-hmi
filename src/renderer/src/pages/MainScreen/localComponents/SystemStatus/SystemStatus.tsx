@@ -1,9 +1,8 @@
-import { FC } from 'react'
 import { Activity } from 'lucide-react'
 import Card from 'components/Card'
-import StatusBadge from 'components/StatusBadge'
 import Panel from 'components/Panel'
-import { StatusList, WarningGroup } from '../MainScreen.styles'
+import { StatusList, WarningGroup } from '../../MainScreen.styles'
+import { StatusBadge } from './SystemStatus.styles'
 import { PositionProps } from 'styles/mixins'
 
 interface SystemStatusProps extends PositionProps {
@@ -17,11 +16,11 @@ interface SystemStatusProps extends PositionProps {
   }
 }
 
-export const SystemStatus: FC<SystemStatusProps> = ({
+export const SystemStatus = ({
   controlState,
   height = 950,
   ...positionProps
-}) => {
+}: SystemStatusProps) => {
   return (
     <Panel width={380} height={height} {...positionProps}>
       <Card title="System Status" icon={Activity}>

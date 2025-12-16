@@ -6,21 +6,34 @@ export interface DriveKeypadProps {
   height?: string
   maxWidth?: string
   maxHeight?: string
+  onClick?: () => void
 }
 
 export const DriveKeypad: React.FC<DriveKeypadProps> = ({
   width,
   height,
   maxWidth,
-  maxHeight
+  maxHeight,
+  onClick
 }) => {
   return (
     <KeypadWrapper
-      aria-hidden="true"
+      aria-hidden={!onClick}
+      aria-label={onClick ? 'Abrir editor rápido de parámetros' : undefined}
       $width={width}
       $height={height}
       $maxWidth={maxWidth}
       $maxHeight={maxHeight}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : -1}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (!onClick) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      }}
     >
       <KeypadSvg viewBox="0 0 420 740" preserveAspectRatio="xMidYMid meet" role="img">
         <defs>

@@ -49,4 +49,5 @@ export const Content = styled.div`
   flex-grow: 1;
   position: relative;
   height: 100%;
+  min-height: 0; /* allow nested flex children to size correctly (prevents overflow) */
 `

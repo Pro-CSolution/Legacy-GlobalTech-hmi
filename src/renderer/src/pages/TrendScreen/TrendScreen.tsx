@@ -1,204 +1,406 @@
-import React, { useState, useMemo } from 'react'
-import { Filter, Mail, X, Plus, CheckCircle, AlertTriangle, RefreshCcw, Send } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { TrendChart, TrendChartRef, Dataset } from 'components/TrendChart'
+import { ScreenLayout } from 'layouts'
+import { sendTrendReportEmail } from 'services'
+import type { TrendReportSeries } from 'services'
 import { useTheme } from 'styled-components'
-import { TrendChart } from '../../components/TrendChart'
-import { ScreenLayout } from '../../layouts'
-import { useTrendData } from '../../hooks'
-import { ParameterAlias, PARAMETER_ALIASES } from '../../types/generated/devices'
+import { debugLog } from 'utils/debug'
+import { LegendBox } from './components/LegendBox'
+import { ManualPanel } from './components/ManualPanel'
+import { ReportPanel } from './components/ReportPanel'
+import { TrendToolbar } from './components/TrendToolbar'
+import { VariablesPanel } from './components/VariablesPanel'
+import { TIME_RANGES, nowLocalInput } from './constants'
+import { useTrendScreenState } from './hooks/useTrendScreenState'
 import * as S from './TrendScreen.styles'
 
-// --- Configuration ---
+type ImageMimeType = 'image/png' | 'image/jpeg'
 
-const AVAILABLE_VARIABLES = [
-  {
-    id: PARAMETER_ALIASES.motorVolts,
-    label: 'Line Voltage',
-    unit: 'VAC',
-    color: '#06b6d4',
-    category: 'Electrical'
-  },
-  {
-    id: PARAMETER_ALIASES.motorCurrent,
-    label: 'Total Current',
-    unit: 'A',
-    color: '#10b981',
-    category: 'Electrical'
-  },
-  {
-    id: PARAMETER_ALIASES.motorPower,
-    label: 'Active Power',
-    unit: 'kW',
-    color: '#8b5cf6',
-    category: 'Electrical'
-  },
-  {
-    id: PARAMETER_ALIASES.frequencyFeedback,
-    label: 'Frequency',
-    unit: 'Hz',
-    color: '#f59e0b',
-    category: 'Drive'
-  },
-  {
-    id: PARAMETER_ALIASES.torqueDemand,
-    label: 'Motor Torque',
-    unit: '%',
-    color: '#f43f5e',
-    category: 'Drive'
-  },
-  {
-    id: PARAMETER_ALIASES.cdcElectronicsTemperature,
-    label: 'Winding Temp',
-    unit: '°C',
-    color: '#3b82f6',
-    category: 'Temperature'
-  },
-  {
-    id: PARAMETER_ALIASES.inputBridgeTemperature,
-    label: 'Bearing Temp',
-    unit: '°C',
-    color: '#ec4899',
-    category: 'Temperature'
-  },
-  {
-    id: PARAMETER_ALIASES.driveCurrent,
-    label: 'Vibration X',
-    unit: 'mm/s',
-    color: '#d946ef',
-    category: 'Mechanical'
-  },
-  {
-    id: PARAMETER_ALIASES.torqueLimitPositive1,
-    label: 'Coolant Pressure',
-    unit: 'PSI',
-    color: '#14b8a6',
-    category: 'Process'
-  },
-  {
-    id: PARAMETER_ALIASES.jogSpeed1,
-    label: 'Jog Speed 1',
-    unit: '',
-    color: '#14b8a6',
-    category: 'Process'
-  }
-]
+const stripDataUrlPrefix = (dataUrl: string): string => {
+  const idx = dataUrl.indexOf(',')
+  return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl
+}
 
-const TIME_RANGES = [
-  { label: '1M', value: 1 },
-  { label: '5M', value: 5 },
-  { label: '15M', value: 15 },
-  { label: '30M', value: 30 },
-  { label: '1H', value: 60 }
-]
+const sanitizeFilenamePart = (value: string): string =>
+  value
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
 
-const TrendScreen: React.FC = () => {
-  const theme = useTheme()
+const formatIsoForFilename = (iso: string): string =>
+  iso.replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-')
 
-  // State
-  const [selectedVarIds, setSelectedVarIds] = useState<ParameterAlias[]>([
-    PARAMETER_ALIASES.motorVolts,
-    PARAMETER_ALIASES.motorCurrent,
-    PARAMETER_ALIASES.frequencyFeedback
-  ])
-  const [timeRange, setTimeRange] = useState<number>(60) // Minutes
-  const [isConfigOpen, setIsConfigOpen] = useState(false)
-  const [isReportOpen, setIsReportOpen] = useState(false)
+const formatEpochSecondsToLocalTime = (seconds: number): string => {
+  const date = new Date(seconds * 1000)
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
 
-  // Report State
-  const [emailList, setEmailList] = useState<string[]>(['admin@plant.com'])
-  const [newEmail, setNewEmail] = useState('')
-  const [isSending, setIsSending] = useState(false)
+const computePaddedYRange = (
+  dataset: Dataset,
+  xMin: number,
+  xMax: number
+): { yMin?: number; yMax?: number } => {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
 
-  // Live data from backend
-  const { datasets, xDomain } = useTrendData('drive_avid', selectedVarIds, {
-    windowMinutes: timeRange
+  dataset.data.forEach((p) => {
+    if (p.x < xMin || p.x > xMax) return
+    if (!Number.isFinite(p.y)) return
+    min = Math.min(min, p.y)
+    max = Math.max(max, p.y)
   })
 
-  // Handlers
-  const handleToggleVar = (id: string): void => {
-    if (selectedVarIds.includes(id)) {
-      setSelectedVarIds((prev) => prev.filter((v) => v !== id))
-    } else {
-      if (selectedVarIds.length < 5) {
-        setSelectedVarIds((prev) => [...prev, id])
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return {}
+
+  const range = max - min
+  const pad = range > 0 ? range * 0.05 : Math.max(Math.abs(max) * 0.05, 1)
+  return { yMin: min - pad, yMax: max + pad }
+}
+
+type HiddenExportRequest = {
+  datasets: Dataset[]
+  width: number
+  height: number
+  xMin: number
+  xMax: number
+  yMin?: number
+  yMax?: number
+  type: ImageMimeType
+  quality?: number
+}
+
+const TrendScreen = () => {
+  void useTheme()
+  const {
+    timeRange,
+    setTimeRange,
+    isConfigOpen,
+    setIsConfigOpen,
+    isReportOpen,
+    setIsReportOpen,
+    isManualPanelOpen,
+    setIsManualPanelOpen,
+    selectedVarIds,
+    handleToggleVar,
+    combinedDatasets,
+    combinedXDomain,
+    currentValues,
+    manualSeries,
+    selectedManualIds,
+    handleToggleManualSeries,
+    manualMode,
+    setManualMode,
+    manualForm,
+    setManualForm,
+    manualPoints,
+    manualPointsSeriesId,
+    setManualPointsSeriesId,
+    loadManualPoints,
+    isManualSubmitting,
+    handleManualSubmit,
+    handleEditPoint,
+    handleDeletePoint,
+    handleEditSeries,
+    handleDeleteSeries,
+    emailList,
+    newEmail,
+    setNewEmail,
+    isNewEmailValid,
+    emailError,
+    handleAddEmail,
+    handleRemoveEmail,
+    isSending,
+    setIsSending,
+    reportSubject,
+    setReportSubject,
+    reportNote,
+    setReportNote,
+    privateMode,
+    setPrivateMode
+  } = useTrendScreenState()
+
+  const selectedCount = selectedVarIds.length + selectedManualIds.length
+  const chartRef = useRef<TrendChartRef>(null)
+  const exportChartRef = useRef<TrendChartRef>(null)
+  const [exportRequest, setExportRequest] = useState<HiddenExportRequest | null>(null)
+  const exportResolveRef = useRef<((value: string | null) => void) | null>(null)
+
+  useEffect(() => {
+    debugLog('trend.screen', 'state snapshot', {
+      timeRange,
+      selected: {
+        sensors: selectedVarIds.length,
+        manual: selectedManualIds.length,
+        total: selectedCount
+      },
+      datasets: combinedDatasets.length,
+      xDomain: combinedXDomain
+        ? {
+            min: combinedXDomain.min,
+            max: combinedXDomain.max,
+            spanSec: combinedXDomain.max - combinedXDomain.min
+          }
+        : null
+    })
+  }, [
+    timeRange,
+    selectedVarIds.length,
+    selectedManualIds.length,
+    selectedCount,
+    combinedDatasets.length,
+    combinedXDomain
+  ])
+
+  useEffect(() => {
+    if (!exportRequest) return
+    let cancelled = false
+    let attempts = 0
+
+    const tryExport = () => {
+      if (cancelled) return
+      attempts += 1
+      const dataUrl =
+        exportChartRef.current?.exportImage({
+          type: exportRequest.type,
+          quality: exportRequest.quality
+        }) ?? null
+
+      if (!dataUrl) {
+        const plot = exportChartRef.current?.getChart()
+        const canvases = Array.from(
+          plot?.root?.querySelectorAll('canvas') ?? []
+        ) as HTMLCanvasElement[]
+        console.debug('[report.export.hidden] retry', {
+          attempt: attempts,
+          type: exportRequest.type,
+          plot: Boolean(plot),
+          canvases: canvases.map((c) => ({ w: c.width, h: c.height }))
+        })
       }
-    }
-  }
 
-  const handleAddEmail = (): void => {
-    if (newEmail && newEmail.includes('@')) {
-      setEmailList([...emailList, newEmail])
-      setNewEmail('')
-    }
-  }
+      if (dataUrl || attempts >= 20) {
+        exportResolveRef.current?.(dataUrl)
+        exportResolveRef.current = null
+        setExportRequest(null)
+        return
+      }
 
-  const handleSendReport = (): void => {
+      window.setTimeout(tryExport, 120)
+    }
+
+    console.debug('[report.export.hidden] start', {
+      type: exportRequest.type,
+      quality: exportRequest.quality,
+      datasets: exportRequest.datasets.map((d) => ({
+        label: d.label,
+        points: d.data?.length ?? 0,
+        isManual: d.isManual,
+        unit: d.unit
+      })),
+      x: { min: exportRequest.xMin, max: exportRequest.xMax },
+      y: { min: exportRequest.yMin, max: exportRequest.yMax },
+      size: { w: exportRequest.width, h: exportRequest.height }
+    })
+
+    const id = window.setTimeout(tryExport, 220)
+    return () => {
+      cancelled = true
+      window.clearTimeout(id)
+    }
+  }, [exportRequest])
+
+  const exportChartHidden = useCallback(
+    async (req: HiddenExportRequest): Promise<string | null> => {
+      return await new Promise<string | null>((resolve) => {
+        exportResolveRef.current = resolve
+        setExportRequest(req)
+      })
+    },
+    []
+  )
+
+  const handleSendReport = useCallback(async (): Promise<boolean> => {
+    if (!combinedXDomain) return false
+    if (!emailList.length) return false
+
+    const startSec = combinedXDomain.min
+    const endSec = combinedXDomain.max
+
+    const startIso = new Date(startSec * 1000).toISOString()
+    const endIso = new Date(endSec * 1000).toISOString()
+
+    const startStamp = formatIsoForFilename(startIso)
+    const endStamp = formatIsoForFilename(endIso)
+
     setIsSending(true)
-    setTimeout(() => {
-      setIsSending(false)
-      setIsReportOpen(false)
-    }, 2000)
-  }
+    try {
+      console.debug('[report.send] start', {
+        recipients: emailList.length,
+        range: { startSec, endSec, startIso, endIso },
+        datasets: combinedDatasets.map((d) => ({
+          label: d.label,
+          points: d.data?.length ?? 0,
+          isManual: d.isManual,
+          unit: d.unit
+        }))
+      })
 
-  // Legend Values (Current)
-  const currentValues = useMemo(() => {
-    return datasets.map((ds) => ({
-      id: ds.label || ds.parameterId,
-      label: ds.label || ds.parameterId,
-      color: ds.borderColor,
-      value: ds.data.length > 0 ? ds.data[ds.data.length - 1].y : 0,
-      unit: AVAILABLE_VARIABLES.find((v) => v.id === ds.parameterId)?.unit
-    }))
-  }, [datasets])
+      const series: TrendReportSeries[] = []
+      combinedDatasets.forEach((ds) => {
+        const parameterId = (ds as unknown as { parameterId?: string }).parameterId
+        const label = ds.label || parameterId || 'Series'
+        const unit = ds.unit ?? null
+
+        if (ds.isManual === true) {
+          const seriesId = (ds as unknown as { seriesId?: number }).seriesId
+          if (typeof seriesId !== 'number') return
+          series.push({ kind: 'manual', seriesId, label, unit })
+          return
+        }
+
+        if (typeof parameterId !== 'string') return
+        series.push({ kind: 'sensor', parameterId, label, unit })
+      })
+
+      const images: Array<{ filename: string; mimeType: ImageMimeType; contentBase64: string }> = []
+
+      const globalFilename = sanitizeFilenamePart(
+        `Trend - All Parameters - ${startStamp}_to_${endStamp}.png`
+      )
+
+      const globalDataUrl =
+        chartRef.current?.exportImage({ type: 'image/png' }) ??
+        (await exportChartHidden({
+          datasets: combinedDatasets,
+          width: 900,
+          height: 500,
+          xMin: startSec,
+          xMax: endSec,
+          type: 'image/png',
+          quality: 1
+        }))
+
+      if (globalDataUrl) {
+        images.push({
+          filename: globalFilename,
+          mimeType: 'image/png',
+          contentBase64: stripDataUrlPrefix(globalDataUrl)
+        })
+      } else {
+        console.debug('[report.send] global image export failed')
+      }
+
+      for (const ds of combinedDatasets) {
+        const label = ds.label || 'Series'
+        const unitLabel = ds.unit ? ` (${ds.unit})` : ''
+        const kindLabel = ds.isManual === true ? 'Manual' : 'Sensor'
+
+        const { yMin, yMax } = computePaddedYRange(ds, startSec, endSec)
+        const dataUrl = await exportChartHidden({
+          datasets: [ds],
+          width: 900,
+          height: 500,
+          xMin: startSec,
+          xMax: endSec,
+          yMin,
+          yMax,
+          type: 'image/jpeg',
+          quality: 1
+        })
+
+        if (!dataUrl) {
+          console.debug('[report.send] per-series export failed', {
+            label,
+            kind: kindLabel,
+            points: ds.data?.length ?? 0,
+            y: { yMin, yMax }
+          })
+          continue
+        }
+
+        const filename = sanitizeFilenamePart(
+          `Trend - ${kindLabel} - ${label}${unitLabel} - ${startStamp}_to_${endStamp}.jpg`
+        )
+
+        images.push({
+          filename,
+          mimeType: 'image/jpeg',
+          contentBase64: stripDataUrlPrefix(dataUrl)
+        })
+      }
+
+      console.debug('[report.send] payload ready', {
+        series: series.length,
+        images: images.length,
+        imageNames: images.map((i) => i.filename)
+      })
+
+      await sendTrendReportEmail({
+        recipients: emailList,
+        privateMode,
+        subject: reportSubject,
+        note: reportNote,
+        timeRange: { start: startIso, end: endIso },
+        series,
+        images
+      })
+
+      console.debug('[report.send] sent ok')
+      return true
+    } catch (err) {
+      console.error('No se pudo enviar el reporte', err)
+      return false
+    } finally {
+      setIsSending(false)
+    }
+  }, [
+    combinedDatasets,
+    combinedXDomain,
+    emailList,
+    privateMode,
+    reportNote,
+    reportSubject,
+    exportChartHidden,
+    setIsReportOpen,
+    setIsSending
+  ])
 
   return (
     <ScreenLayout>
       <S.ScreenContainer>
-        {/* Toolbar */}
-        <S.Toolbar>
-          <S.ButtonGroup>
-            {TIME_RANGES.map((range) => (
-              <S.TimeButton
-                key={range.value}
-                $isActive={timeRange === range.value}
-                onClick={() => setTimeRange(range.value)}
-              >
-                {range.label}
-              </S.TimeButton>
-            ))}
-          </S.ButtonGroup>
+        <TrendToolbar
+          timeRange={timeRange}
+          timeRanges={TIME_RANGES}
+          onSelectRange={setTimeRange}
+          selectedCount={selectedCount}
+          isVariablesOpen={isConfigOpen}
+          onToggleVariables={() => setIsConfigOpen((v) => !v)}
+          isManualOpen={isManualPanelOpen}
+          onToggleManual={() => setIsManualPanelOpen((v) => !v)}
+          isReportOpen={isReportOpen}
+          onToggleReport={() => setIsReportOpen((v) => !v)}
+        />
 
-          <S.ButtonGroup>
-            <S.ActionButton onClick={() => setIsConfigOpen(true)}>
-              <Filter size={14} />
-              <span>VARIABLES ({selectedVarIds.length}/5)</span>
-            </S.ActionButton>
-            <S.ActionButton
-              $variant={isReportOpen ? 'primary' : undefined}
-              onClick={() => setIsReportOpen(!isReportOpen)}
-            >
-              <Mail size={14} />
-              <span>SEND REPORT</span>
-            </S.ActionButton>
-          </S.ButtonGroup>
-        </S.Toolbar>
-
-        {/* Main Content */}
         <S.ContentArea>
-          <S.ChartSection $isShrunk={isReportOpen}>
+          <S.ChartSection $isShrunk={isReportOpen || isManualPanelOpen || isConfigOpen}>
             <TrendChart
-              datasets={datasets}
+              ref={chartRef}
+              datasets={combinedDatasets}
               timeWindow={timeRange}
               showLegend={false}
               showTitle={false}
               responsive={true}
               maintainAspectRatio={false}
-              gridColor={theme.colors.borders.primary}
               height={'97%'}
               width={'98%'}
               scales={{
                 x: {
-                  min: xDomain?.min,
-                  max: xDomain?.max,
+                  min: combinedXDomain?.min,
+                  max: combinedXDomain?.max,
                   ticks: {
                     callback: (val: unknown): string => {
                       const date = new Date((val as number) * 1000)
@@ -212,198 +414,116 @@ const TrendScreen: React.FC = () => {
                 }
               }}
             />
+            <LegendBox values={currentValues} />
 
-            {/* Floating Legend */}
-            <S.LegendBox>
-              <S.CategoryTitle>Current Values</S.CategoryTitle>
-              {currentValues.map((val, idx) => (
-                <S.LegendItem key={idx}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <S.ColorDot color={val.color!} />
-                    <span style={{ color: theme.colors.text.secondary }}>{val.label}</span>
-                  </div>
-                  <div style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>
-                    {val.value.toFixed(1)}{' '}
-                    <span style={{ fontSize: '10px', color: theme.colors.text.secondary }}>
-                      {' '}
-                      {val.unit}
-                    </span>
-                  </div>
-                </S.LegendItem>
-              ))}
-            </S.LegendBox>
-          </S.ChartSection>
-
-          {/* Report Panel */}
-          <S.ReportPanel $isOpen={isReportOpen}>
-            <S.PanelHeader>
-              <h3>
-                <Mail size={16} /> Automatic Report
-              </h3>
-              <button
-                onClick={() => setIsReportOpen(false)}
+            {/* Exporter oculto (dentro del ThemeProvider real) */}
+            {exportRequest && (
+              <div
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: theme.colors.text.secondary
+                  position: 'fixed',
+                  left: '-10000px',
+                  top: '-10000px',
+                  width: exportRequest.width,
+                  height: exportRequest.height,
+                  pointerEvents: 'none',
+                  opacity: 0
                 }}
               >
-                <X size={16} />
-              </button>
-            </S.PanelHeader>
+                <TrendChart
+                  ref={exportChartRef}
+                  datasets={exportRequest.datasets}
+                  responsive={false}
+                  maintainAspectRatio={false}
+                  showLegend={false}
+                  showTitle={false}
+                  showTooltips={false}
+                  width={exportRequest.width}
+                  height={exportRequest.height}
+                  position={{ left: 0, top: 0 }}
+                  scales={{
+                    x: {
+                      min: exportRequest.xMin,
+                      max: exportRequest.xMax,
+                      ticks: {
+                        callback: (val: number) => formatEpochSecondsToLocalTime(val)
+                      }
+                    },
+                    y: {
+                      min: exportRequest.yMin,
+                      max: exportRequest.yMax
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </S.ChartSection>
 
-            <div
-              style={{ fontSize: '12px', color: theme.colors.text.secondary, lineHeight: '1.4' }}
-            >
-              Generate Excel report (.xlsx) with snapshot of current trend.
-            </div>
+          <ReportPanel
+            isOpen={isReportOpen}
+            onClose={() => setIsReportOpen(false)}
+            emailList={emailList}
+            newEmail={newEmail}
+            onChangeNewEmail={setNewEmail}
+            onAddEmail={handleAddEmail}
+            onSendReport={handleSendReport}
+            isSending={isSending}
+            onRemoveEmail={handleRemoveEmail}
+            isNewEmailValid={isNewEmailValid}
+            emailError={emailError}
+            subject={reportSubject}
+            onChangeSubject={setReportSubject}
+            note={reportNote}
+            onChangeNote={setReportNote}
+            privateMode={privateMode}
+            onTogglePrivateMode={() => setPrivateMode((v) => !v)}
+          />
 
-            <S.CategoryTitle>Recipients</S.CategoryTitle>
-            <S.EmailList>
-              {emailList.map((email, idx) => (
-                <S.EmailItem key={idx}>
-                  <span>{email}</span>
-                  {idx > 0 && (
-                    <button onClick={() => setEmailList((l) => l.filter((e) => e !== email))}>
-                      <X size={12} />
-                    </button>
-                  )}
-                  {idx === 0 && (
-                    <span
-                      style={{
-                        fontSize: '9px',
-                        padding: '2px 4px',
-                        border: `1px solid ${theme.colors.borders.primary}`,
-                        borderRadius: '2px'
-                      }}
-                    >
-                      FIXED
-                    </span>
-                  )}
-                </S.EmailItem>
-              ))}
-            </S.EmailList>
+          <ManualPanel
+            isOpen={isManualPanelOpen}
+            onClose={() => setIsManualPanelOpen(false)}
+            manualSeries={manualSeries}
+            selectedManualIds={selectedManualIds}
+            onToggleManualSeries={handleToggleManualSeries}
+            manualMode={manualMode}
+            onChangeManualMode={setManualMode}
+            manualForm={manualForm}
+            onChangeManualForm={setManualForm}
+            onSubmit={handleManualSubmit}
+            onResetForm={() =>
+              setManualForm((prev) => ({
+                ...prev,
+                seriesId: undefined,
+                name: '',
+                unit: '',
+                value: '',
+                time: nowLocalInput(),
+                note: '',
+                createdBy: '',
+                pointId: undefined
+              }))
+            }
+            isSubmitting={isManualSubmitting}
+            manualPoints={manualPoints}
+            manualPointsSeriesId={manualPointsSeriesId}
+            onChangeManualPointsSeriesId={setManualPointsSeriesId}
+            onReloadPoints={loadManualPoints}
+            onEditPoint={handleEditPoint}
+            onDeletePoint={handleDeletePoint}
+            onEditSeries={handleEditSeries}
+            onDeleteSeries={handleDeleteSeries}
+          />
 
-            <S.InputGroup>
-              <input
-                type="email"
-                placeholder="new@email.com"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddEmail()}
-              />
-              <S.ActionButton onClick={handleAddEmail}>
-                <Plus size={16} />
-              </S.ActionButton>
-            </S.InputGroup>
-
-            <S.ActionButton
-              $variant="success"
-              style={{ marginTop: 'auto', justifyContent: 'center', padding: '12px' }}
-              onClick={handleSendReport}
-              disabled={isSending}
-            >
-              {isSending ? (
-                <>
-                  <RefreshCcw size={16} className="animate-spin" />
-                  <span>SENDING...</span>
-                </>
-              ) : (
-                <>
-                  <Send size={16} />
-                  <span>SEND REPORT</span>
-                </>
-              )}
-            </S.ActionButton>
-          </S.ReportPanel>
+          <VariablesPanel
+            isOpen={isConfigOpen}
+            onClose={() => setIsConfigOpen(false)}
+            selectedVarIds={selectedVarIds}
+            onToggleVar={handleToggleVar}
+            selectedManualIds={selectedManualIds}
+            onToggleManualSeries={handleToggleManualSeries}
+            manualSeries={manualSeries}
+            onOpenManualPanel={() => setIsManualPanelOpen(true)}
+          />
         </S.ContentArea>
-
-        {/* Variables Modal */}
-        {isConfigOpen && (
-          <S.ModalOverlay onClick={() => setIsConfigOpen(false)}>
-            <S.ModalContent onClick={(e) => e.stopPropagation()}>
-              <S.ModalHeader>
-                <h3>
-                  <Filter size={18} /> Select Trend Variables
-                </h3>
-                <button
-                  onClick={() => setIsConfigOpen(false)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: theme.colors.text.secondary
-                  }}
-                >
-                  <X size={20} />
-                </button>
-              </S.ModalHeader>
-
-              <S.ModalBody>
-                <div
-                  style={{
-                    marginBottom: '16px',
-                    padding: '8px',
-                    backgroundColor: `${theme.colors.status.warning}20`,
-                    border: `1px solid ${theme.colors.status.warning}50`,
-                    borderRadius: '4px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    fontSize: '12px',
-                    color: theme.colors.status.warning
-                  }}
-                >
-                  <AlertTriangle size={14} />
-                  <span>
-                    Current Selection: <strong>{selectedVarIds.length}</strong> / 5 max variables
-                  </span>
-                </div>
-
-                <S.CategoryGrid>
-                  {['Electrical', 'Drive', 'Temperature', 'Mechanical', 'Process'].map((cat) => {
-                    const vars = AVAILABLE_VARIABLES.filter((v) => v.category === cat)
-                    if (vars.length === 0) return null
-
-                    return (
-                      <S.CategoryCard key={cat}>
-                        <S.CategoryTitle>{cat}</S.CategoryTitle>
-                        {vars.map((v) => {
-                          const isSelected = selectedVarIds.includes(v.id)
-                          const isDisabled = !isSelected && selectedVarIds.length >= 5
-
-                          return (
-                            <S.VariableButton
-                              key={v.id}
-                              isSelected={isSelected}
-                              isDisabled={isDisabled}
-                              onClick={() => handleToggleVar(v.id)}
-                              disabled={isDisabled}
-                            >
-                              <S.CheckBox isSelected={isSelected}>
-                                {isSelected && <CheckCircle />}
-                              </S.CheckBox>
-                              <span>{v.label}</span>
-                              <S.ColorDot color={v.color} />
-                            </S.VariableButton>
-                          )
-                        })}
-                      </S.CategoryCard>
-                    )
-                  })}
-                </S.CategoryGrid>
-              </S.ModalBody>
-
-              <S.ModalFooter>
-                <S.ActionButton $variant="primary" onClick={() => setIsConfigOpen(false)}>
-                  APPLY CHANGES
-                </S.ActionButton>
-              </S.ModalFooter>
-            </S.ModalContent>
-          </S.ModalOverlay>
-        )}
       </S.ScreenContainer>
     </ScreenLayout>
   )

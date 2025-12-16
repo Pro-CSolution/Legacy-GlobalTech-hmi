@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ScreenLayout } from 'layouts'
 import { TrendChart } from 'components/TrendChart'
 import { useDeviceData, useSendCommand, useTrendData } from 'hooks'
@@ -6,7 +6,7 @@ import { DeviceId } from 'types'
 import { ParameterAlias, PARAMETER_ALIASES } from 'types/generated/devices'
 
 // Local Components
-import { SystemStatus } from './localComponents/SystemStatus'
+import { SystemStatus } from './localComponents/SystemStatus/SystemStatus'
 import { ElectricalParams } from './localComponents/ElectricalParams'
 import { SpeedControl } from './localComponents/SpeedControl'
 import { DriveControl } from './localComponents/DriveControl'
@@ -17,7 +17,7 @@ import { MainContainer } from './MainScreen.styles'
 
 const TREND_ALIASES: ParameterAlias[] = ['torqueDemand', 'dcLinkVoltage', 'speedFeedback']
 
-const MainScreen: React.FC = () => {
+const MainScreen = () => {
   const driveId: DeviceId = 'drive_avid'
 
   const { data: driveData } = useDeviceData(driveId)
@@ -88,39 +88,38 @@ const MainScreen: React.FC = () => {
     <ScreenLayout>
       <MainContainer>
         {/* Left Column: System Status (Absolute Position) */}
-        <SystemStatus controlState={controlState} height={582} position={{ left: 20, top: 20 }} />
-        <ClientMotorInfo position={{ left: 20, top: 610 }} width={380} height={360} />
-
-        {/* Center Top: Electrical (Absolute Position) */}
-        <ElectricalParams electrical={electrical} position={{ left: 420, top: 20 }} />
-
-        {/* Center Bottom: Speed Control (Absolute Position) */}
-        <SpeedControl
-          speedRef={speedRef}
-          setSpeedRef={handleSetSpeedRef}
-          position={{ left: 420, bottom: 0.1 }}
-          height={280}
-          width={1080}
-        />
+        <SystemStatus controlState={controlState} height={480} position={{ left: 20, top: 0 }} />
+        <ClientMotorInfo position={{ left: 20, top: 490 }} width={380} height={360} />
 
         {/* Right Column: Drive Control (Absolute Position) */}
         <DriveControl
           controlState={controlState}
           setControlState={setControlState}
-          position={{ left: 1520, top: 20 }}
-          height={950}
+          position={{ left: 1520, top: 0 }}
+          height={850}
           width={350}
         />
 
+        {/* Center Top: Electrical (Absolute Position) */}
+        <ElectricalParams electrical={electrical} position={{ left: 420, top: 0 }} height={460} />
+
+        {/* Center Bottom: Speed Control (Absolute Position) */}
+        <SpeedControl
+          speedRef={speedRef}
+          setSpeedRef={handleSetSpeedRef}
+          position={{ left: 420, bottom: 1 }}
+          height={185}
+          width={1080}
+        />
         {/* Trend Chart Demo */}
         <TrendChart
           title="Pressure"
           datasets={getTrendDataset(PARAMETER_ALIASES.torqueDemand)}
           timeWindow={5}
           variant="modern"
-          position={{ left: 420, top: 500 }}
+          position={{ left: 420, top: 470 }}
           width={350}
-          height={170}
+          height={180}
           scales={{
             x: {
               min: trendXDomain?.min,
@@ -128,14 +127,15 @@ const MainScreen: React.FC = () => {
             }
           }}
         />
+
         <TrendChart
           title="Dc Link Voltage"
           datasets={getTrendDataset(PARAMETER_ALIASES.dcLinkVoltage)}
           timeWindow={5}
           variant="modern"
-          position={{ left: 785, top: 500 }}
+          position={{ left: 785, top: 470 }}
           width={350}
-          height={170}
+          height={180}
           scales={{
             x: {
               min: trendXDomain?.min,
@@ -148,9 +148,9 @@ const MainScreen: React.FC = () => {
           datasets={getTrendDataset(PARAMETER_ALIASES.speedFeedback)}
           timeWindow={5}
           variant="modern"
-          position={{ left: 1150, top: 500 }}
+          position={{ left: 1150, top: 470 }}
           width={350}
-          height={170}
+          height={180}
           scales={{
             x: {
               min: trendXDomain?.min,

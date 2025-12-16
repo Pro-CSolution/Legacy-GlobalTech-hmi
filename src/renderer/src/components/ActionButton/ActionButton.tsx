@@ -1,4 +1,3 @@
-import React from 'react'
 import { LucideIcon } from 'lucide-react'
 import { Button } from './ActionButton.styles'
 import { PositionProps } from '../../styles/mixins'
@@ -12,7 +11,7 @@ export interface ActionButtonProps extends PositionProps {
   disabled?: boolean
 }
 
-const ActionButton: React.FC<ActionButtonProps> = ({
+const ActionButton = ({
   label,
   color = 'slate',
   onClick,
@@ -20,7 +19,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
   active = false,
   disabled = false,
   ...positionProps
-}) => {
+}: ActionButtonProps) => {
   return (
     <Button color={color} active={active} onClick={onClick} disabled={disabled} {...positionProps}>
       {Icon && <Icon size={24} />}

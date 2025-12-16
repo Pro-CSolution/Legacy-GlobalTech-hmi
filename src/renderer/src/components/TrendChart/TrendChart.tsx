@@ -10,6 +10,7 @@ import {
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { useTheme } from 'styled-components'
+import { createKeyedThrottle, debugLog } from 'utils/debug'
 import {
   Container,
   TitleBar,
@@ -177,12 +178,42 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       idx: number
       left: number
       top: number
+      xVal?: number
     } | null>(null)
     const startTimeRef = useRef<number>(Date.now())
     const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const latestDataRef = useRef<UPlotData>({ data: [], xValues: [], seriesValues: [] })
     const latestDatasetsRef = useRef<Dataset[]>([])
     const clickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null)
+    const lastPointerRef = useRef<{
+      clientX: number
+      clientY: number
+      relX: number
+      relY: number
+      at: number
+    } | null>(null)
+
+    const debugGate = useMemo(() => createKeyedThrottle(600), [])
+    const cursorDebugGate = useMemo(() => createKeyedThrottle(250), [])
+
+    useEffect(() => {
+      const el = plotContainerRef.current
+      if (!el) return
+
+      const onPointerMove = (ev: PointerEvent) => {
+        const rect = el.getBoundingClientRect()
+        lastPointerRef.current = {
+          clientX: ev.clientX,
+          clientY: ev.clientY,
+          relX: ev.clientX - rect.left,
+          relY: ev.clientY - rect.top,
+          at: typeof performance !== 'undefined' ? performance.now() : Date.now()
+        }
+      }
+
+      el.addEventListener('pointermove', onPointerMove)
+      return () => el.removeEventListener('pointermove', onPointerMove)
+    }, [])
 
     // Memoize demo config with defaults
     const mergedDemoConfig = useMemo<DemoDataConfig>(
@@ -306,10 +337,9 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
     }, [demoData, externalDatasets])
 
     // Get active datasets (internal/demo, or override, else external)
-    const activeDatasets = useMemo(
-      () => overrideDatasets || (demoData ? internalDatasets : externalDatasets || []),
-      [overrideDatasets, demoData, internalDatasets, externalDatasets]
-    )
+    const activeDatasets = useMemo(() => {
+      return overrideDatasets || (demoData ? internalDatasets : externalDatasets || [])
+    }, [overrideDatasets, demoData, internalDatasets, externalDatasets])
 
     const hasExternalData = useMemo(
       () => !demoData && activeDatasets.length > 0,
@@ -342,7 +372,12 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
               dataset.borderColor || (index === 0 ? colors.line : theme.colors.accent.secondary),
             width: dataset.borderWidth || 1.5,
             fill: dataset.fill ? dataset.backgroundColor || 'transparent' : undefined,
-            points: { show: false }
+            points: { show: (dataset.pointRadius ?? 0) > 0 },
+            spanGaps: true,
+            paths:
+              dataset.stepped && uPlot.paths && uPlot.paths.stepped
+                ? uPlot.paths.stepped({ align: 1 })
+                : undefined
           }))
         ] satisfies uPlot.Series[],
       [activeDatasets, colors.line, theme.colors.accent.secondary]
@@ -437,7 +472,48 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
 
         const left = plot.cursor.left ?? 0
         const top = plot.cursor.top ?? 0
-        setTooltipState({ idx, left, top })
+        const xValAtCursor = plot.posToVal(left, 'x')
+        setTooltipState({ idx, left, top, xVal: xValAtCursor })
+
+        if (cursorDebugGate('trend.tooltip.setCursor')) {
+          const rootEl = plot.root as unknown as HTMLElement | null
+          const rootRect = rootEl?.getBoundingClientRect()
+          const rootOffsetW = rootEl?.offsetWidth
+          const rootOffsetH = rootEl?.offsetHeight
+
+          const contEl = plotContainerRef.current
+          const contRect = contEl?.getBoundingClientRect()
+          const contOffsetW = contEl?.offsetWidth
+          const contOffsetH = contEl?.offsetHeight
+
+          const ratio = {
+            containerX:
+              contRect && contOffsetW && contOffsetW > 0 ? contRect.width / contOffsetW : undefined,
+            containerY:
+              contRect && contOffsetH && contOffsetH > 0
+                ? contRect.height / contOffsetH
+                : undefined,
+            rootX:
+              rootRect && rootOffsetW && rootOffsetW > 0 ? rootRect.width / rootOffsetW : undefined,
+            rootY:
+              rootRect && rootOffsetH && rootOffsetH > 0 ? rootRect.height / rootOffsetH : undefined
+          }
+
+          const pointer = lastPointerRef.current
+          const xVal = latestDataRef.current.xValues[idx]
+          const valToPosX =
+            typeof xVal === 'number' && Number.isFinite(xVal) ? plot.valToPos(xVal, 'x') : undefined
+
+          debugLog('trend.tooltip', 'setCursor', {
+            idx,
+            cursor: { left, top },
+            pointer,
+            ratio,
+            xVal,
+            valToPosX,
+            dpr: typeof window !== 'undefined' ? window.devicePixelRatio : undefined
+          })
+        }
 
         if (onHover) {
           const hit = findNearestPoint(
@@ -451,7 +527,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
           }
         }
       },
-      [onHover]
+      [onHover, cursorDebugGate]
     )
 
     const createPlot = useCallback(() => {
@@ -463,6 +539,24 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       const { width: boxWidth, height: boxHeight } = container.getBoundingClientRect()
       const baseWidth = boxWidth || (typeof width === 'number' ? width : 400)
       const baseHeight = boxHeight || (typeof height === 'number' ? height : 300)
+
+      if (debugGate('trend.chart.createPlot')) {
+        const rect = container.getBoundingClientRect()
+        const offsetW = container.offsetWidth
+        const offsetH = container.offsetHeight
+        debugLog('trend.chart', 'createPlot', {
+          container: {
+            rect: { w: rect.width, h: rect.height, left: rect.left, top: rect.top },
+            offset: { w: offsetW, h: offsetH }
+          },
+          base: { w: baseWidth, h: baseHeight },
+          ratio: {
+            x: offsetW > 0 ? rect.width / offsetW : undefined,
+            y: offsetH > 0 ? rect.height / offsetH : undefined
+          },
+          dpr: typeof window !== 'undefined' ? window.devicePixelRatio : undefined
+        })
+      }
 
       const plot = new uPlot(
         {
@@ -504,6 +598,40 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
           },
           cursor: {
             points: { show: false },
+            /**
+             * Corrige el desfase del cursor/tooltip cuando el árbol está escalado (p.ej. transform: scale o zoom).
+             * uPlot trabaja en "layout px" del plot area (`self.over.offsetWidth`), pero el evento llega en "visual px"
+             * (`getBoundingClientRect`). Ajustamos left/top dividiendo por la relación rect/offset.
+             */
+            move: (self, mouseLeft, mouseTop) => {
+              const over = self.over
+              const rect = over.getBoundingClientRect()
+              const offsetW = over.offsetWidth || rect.width || 1
+              const offsetH = over.offsetHeight || rect.height || 1
+
+              const scaleX = rect.width / offsetW
+              const scaleY = rect.height / offsetH
+
+              const ev = self.cursor.event
+              const rawLeft = ev ? ev.clientX - rect.left : mouseLeft
+              const rawTop = ev ? ev.clientY - rect.top : mouseTop
+
+              const left = scaleX ? rawLeft / scaleX : rawLeft
+              const top = scaleY ? rawTop / scaleY : rawTop
+
+              if (cursorDebugGate('trend.tooltip.move')) {
+                debugLog('trend.tooltip', 'cursor.move adjust', {
+                  mouse: { left: mouseLeft, top: mouseTop },
+                  raw: { left: rawLeft, top: rawTop },
+                  rect: { w: rect.width, h: rect.height, left: rect.left, top: rect.top },
+                  offset: { w: offsetW, h: offsetH },
+                  scale: { x: scaleX, y: scaleY },
+                  adjusted: { left, top }
+                })
+              }
+
+              return [left, top]
+            },
             drag: { x: false, y: false }
           },
           legend: { show: false },
@@ -524,6 +652,12 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
           if (!entry || !plotInstanceRef.current) return
           const nextWidth = entry.contentRect.width
           const nextHeight = entry.contentRect.height
+
+          if (debugGate('trend.chart.resize')) {
+            debugLog('trend.chart', 'ResizeObserver setSize', {
+              contentRect: { w: nextWidth, h: nextHeight }
+            })
+          }
           plotInstanceRef.current.setSize({ width: nextWidth, height: nextHeight })
         })
         resizeObserverRef.current.observe(container)
@@ -547,6 +681,8 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       applyScales,
       colors.grid,
       colors.text,
+      debugGate,
+      cursorDebugGate,
       handleSetCursor,
       destroyPlot,
       height,
@@ -606,6 +742,51 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       getChart: () => plotInstanceRef.current,
       updateData: (newDatasets: Dataset[]) => {
         setOverrideDatasets(newDatasets)
+      },
+      exportImage: (opts?: { type?: 'image/png' | 'image/jpeg'; quality?: number }) => {
+        const plot = plotInstanceRef.current
+        if (!plot) return null
+
+        const type = opts?.type ?? 'image/png'
+        const quality = opts?.quality ?? 0.92
+
+        const canvases = Array.from(
+          plot.root?.querySelectorAll('canvas') ?? []
+        ) as HTMLCanvasElement[]
+        if (!canvases.length) {
+          console.debug('[TrendChart.exportImage] no canvases found', { type })
+          return null
+        }
+
+        const canvas = canvases
+          .filter((c) => (c.width ?? 0) > 0 && (c.height ?? 0) > 0)
+          .sort((a, b) => b.width * b.height - a.width * a.height)[0]
+
+        if (!canvas) {
+          console.debug('[TrendChart.exportImage] canvases found but no sized canvas', {
+            type,
+            canvases: canvases.map((c) => ({ w: c.width, h: c.height }))
+          })
+          return null
+        }
+
+        try {
+          const dataUrl =
+            type === 'image/jpeg' ? canvas.toDataURL(type, quality) : canvas.toDataURL(type)
+          if (!dataUrl || !dataUrl.startsWith('data:image/')) {
+            console.debug('[TrendChart.exportImage] empty/invalid dataUrl', {
+              type,
+              size: { w: canvas.width, h: canvas.height }
+            })
+          }
+          return dataUrl
+        } catch {
+          console.debug('[TrendChart.exportImage] toDataURL failed', {
+            type,
+            size: { w: canvas.width, h: canvas.height }
+          })
+          return null
+        }
       },
       reset: () => {
         setOverrideDatasets(null)
@@ -765,30 +946,40 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
             <TooltipContainer style={{ left: tooltipState.left + 12, top: tooltipState.top + 12 }}>
               <TooltipHeader>
                 {(() => {
-                  const ts = uplotData.xValues[tooltipState.idx]
-                  const isRelativeTime = ts < 1e8
+                  const tsRaw =
+                    typeof tooltipState.xVal === 'number' && Number.isFinite(tooltipState.xVal)
+                      ? tooltipState.xVal
+                      : uplotData.xValues[tooltipState.idx]
+
+                  const isEpochTime = tsRaw >= 1e8
+
+                  // For real trend data (epoch seconds), always show local clock time.
+                  if (isEpochTime) {
+                    const date = new Date(tsRaw * 1000)
+                    return date.toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit'
+                    })
+                  }
+
+                  // For relative/demo charts, show remaining if a max is defined, else show elapsed.
                   if (typeof resolvedXMax === 'number') {
-                    const remaining = Math.max(resolvedXMax - ts, 0)
+                    const remaining = Math.max(resolvedXMax - tsRaw, 0)
                     const minutes = Math.floor(remaining / SECONDS_PER_MINUTE)
                     const seconds = Math.floor(remaining % SECONDS_PER_MINUTE)
                     return `${minutes}m ${seconds}s`
                   }
-                  if (isRelativeTime) {
-                    const minutes = Math.floor(ts / SECONDS_PER_MINUTE)
-                    const seconds = Math.floor(ts % SECONDS_PER_MINUTE)
-                    return `${minutes}m ${seconds}s`
-                  }
-                  const date = new Date(ts * 1000)
-                  return date.toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                  })
+
+                  const minutes = Math.floor(tsRaw / SECONDS_PER_MINUTE)
+                  const seconds = Math.floor(tsRaw % SECONDS_PER_MINUTE)
+                  return `${minutes}m ${seconds}s`
                 })()}
               </TooltipHeader>
               {activeDatasets.map((ds, idx) => {
                 const val = uplotData.seriesValues[idx]?.[tooltipState.idx]
                 if (val === null || val === undefined) return null
+                const unit = ds.unit
                 return (
                   <TooltipRow key={`${ds.label ?? idx}-${tooltipState.idx}`}>
                     <LegendDot
@@ -798,8 +989,19 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
                           (idx === 0 ? colors.line : theme.colors.accent.secondary)
                       }}
                     />
-                    <span>{ds.label || `Dataset ${idx + 1}`}</span>
-                    <span>{val.toFixed(1)}</span>
+                    <span style={{ color: theme.colors.text.secondary }}>
+                      {ds.label || `Dataset ${idx + 1}`}
+                    </span>
+                    <div
+                      style={{ fontFamily: 'monospace', fontWeight: 'bold', marginLeft: '10px' }}
+                    >
+                      {val.toFixed(1)}{' '}
+                      {unit && (
+                        <span style={{ fontSize: '10px', color: theme.colors.text.secondary }}>
+                          {unit}
+                        </span>
+                      )}
+                    </div>
                   </TooltipRow>
                 )
               })}

@@ -137,8 +137,8 @@ export const LegendItem = styled.div`
   font-size: ${({ theme }) => theme.typography.sizes.xs};
 `
 
-export const ReportPanel = styled.div<{ $isOpen: boolean }>`
-  width: 300px;
+export const SidePanel = styled.div<{ $isOpen: boolean; $width?: string }>`
+  width: ${({ $width }) => $width || '300px'};
   background-color: ${({ theme }) => theme.colors.background.secondary};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   border-radius: ${({ theme }) => theme.borderRadius.lg};
@@ -297,7 +297,7 @@ export const CategoryCard = styled.div`
 `
 
 export const CategoryTitle = styled.h4`
-  font-size: 10px;
+  font-size: 16px;
   font-weight: bold;
   text-transform: uppercase;
   color: ${({ theme }) => theme.colors.accent.primary};
@@ -306,38 +306,42 @@ export const CategoryTitle = styled.h4`
   border-bottom: 1px solid ${({ theme }) => theme.colors.borders.primary}80;
 `
 
-export const VariableButton = styled.button<{ isSelected: boolean; isDisabled: boolean }>`
+export const VariableButton = styled.button<{ $isSelected: boolean; $isDisabled: boolean }>`
   width: 100%;
   display: flex;
   align-items: center;
-  padding: 8px;
+  padding: 14px 16px;
   margin-bottom: 8px;
-  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  border-radius: ${({ theme }) => theme.borderRadius.md};
   border: 1px solid
-    ${({ isSelected, theme }) =>
-      isSelected ? theme.colors.accent.primary : theme.colors.borders.primary};
-  background-color: ${({ isSelected, theme }) =>
-    isSelected ? `${theme.colors.accent.primary}20` : theme.colors.background.secondary};
-  cursor: ${({ isDisabled }) => (isDisabled ? 'not-allowed' : 'pointer')};
-  opacity: ${({ isDisabled }) => (isDisabled ? 0.5 : 1)};
-  transition: all 0.2s;
+    ${({ $isSelected, theme }) =>
+      $isSelected ? theme.colors.accent.primary : theme.colors.borders.primary};
+  background-color: ${({ $isSelected, theme }) =>
+    $isSelected ? `${theme.colors.accent.primary}20` : theme.colors.background.primary};
+  cursor: ${({ $isDisabled }) => ($isDisabled ? 'not-allowed' : 'pointer')};
+  opacity: ${({ $isDisabled }) => ($isDisabled ? 0.5 : 1)};
+  transition: background 0.2s, border-color 0.2s, transform 0.05s;
 
   &:hover {
-    border-color: ${({ isDisabled, theme }) =>
-      isDisabled ? theme.colors.borders.primary : theme.colors.accent.primary};
-    background-color: ${({ isDisabled, isSelected, theme }) =>
-      isDisabled
+    border-color: ${({ $isDisabled, theme }) =>
+      $isDisabled ? theme.colors.borders.primary : theme.colors.accent.primary};
+    background-color: ${({ $isDisabled, $isSelected, theme }) =>
+      $isDisabled
         ? 'transparent'
-        : isSelected
+        : $isSelected
           ? `${theme.colors.accent.primary}30`
           : theme.colors.background.tertiary};
   }
 
+  &:active {
+    transform: ${({ $isDisabled }) => ($isDisabled ? 'none' : 'scale(0.99)')};
+  }
+
   span {
-    font-size: 11px;
-    font-weight: bold;
-    color: ${({ isSelected, theme }) =>
-      isSelected ? theme.colors.text.primary : theme.colors.text.secondary};
+    font-size: ${({ theme }) => theme.typography.sizes.sm};
+    font-weight: ${({ theme }) => theme.typography.weights.bold};
+    color: ${({ $isSelected, theme }) =>
+      $isSelected ? theme.colors.text.primary : theme.colors.text.secondary};
   }
 `
 
@@ -349,23 +353,23 @@ export const ColorDot = styled.div<{ color: string }>`
   margin-left: auto;
 `
 
-export const CheckBox = styled.div<{ isSelected: boolean }>`
-  width: 12px;
-  height: 12px;
+export const CheckBox = styled.div<{ $isSelected: boolean }>`
+  width: 14px;
+  height: 14px;
   border: 1px solid
-    ${({ isSelected, theme }) =>
-      isSelected ? theme.colors.accent.primary : theme.colors.text.disabled};
-  background-color: ${({ isSelected, theme }) =>
-    isSelected ? theme.colors.accent.primary : 'transparent'};
-  margin-right: 8px;
+    ${({ $isSelected, theme }) =>
+      $isSelected ? theme.colors.accent.primary : theme.colors.text.disabled};
+  background-color: ${({ $isSelected, theme }) =>
+    $isSelected ? theme.colors.accent.primary : 'transparent'};
+  margin-right: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 2px;
+  border-radius: 4px;
 
   svg {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     color: #fff;
   }
 `

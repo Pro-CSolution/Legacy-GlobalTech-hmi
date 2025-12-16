@@ -1,4 +1,4 @@
-import styled from 'styled-components'
+import styled, { css } from 'styled-components'
 
 export const Centerer = styled.div`
   width: 100vw;
@@ -13,14 +13,27 @@ export const Centerer = styled.div`
   left: 0;
 `
 
-export const Canvas = styled.div<{ width: number; height: number; scale: number }>`
+export const Canvas = styled.div<{
+  width: number
+  height: number
+  scale: number
+  $useZoom: boolean
+}>`
   width: ${({ width }) => width}px;
   height: ${({ height }) => height}px;
   position: relative;
   background: ${({ theme }) => theme.colors.background.secondary};
   overflow: hidden;
-  transform: scale(${({ scale }) => scale});
-  transform-origin: center; /* Center scaling looks better with flex center parent */
+  ${({ $useZoom, scale }) =>
+    $useZoom
+      ? css`
+          /* Prefer zoom to keep pointer math consistent for canvas libs (e.g. uPlot). */
+          zoom: ${scale};
+        `
+      : css`
+          transform: scale(${scale});
+          transform-origin: center; /* Center scaling looks better with flex center parent */
+        `}
   flex-shrink: 0;
   box-shadow: ${({ theme }) => theme.shadows.lg};
 `

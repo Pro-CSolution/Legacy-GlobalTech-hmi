@@ -1,4 +1,3 @@
-import { FC } from 'react'
 import { HMI_CONFIG } from 'config/constants'
 import HMIContainer from 'components/HMIContainer'
 import Header from 'components/Layout/Header'
@@ -9,7 +8,7 @@ interface ScreenLayoutProps {
   children: React.ReactNode
 }
 
-const ScreenLayout: FC<ScreenLayoutProps> = ({ children }) => {
+const ScreenLayout = ({ children }: ScreenLayoutProps) => {
   return (
     <HMIContainer
       baseWidth={HMI_CONFIG.SCREEN.BASE_WIDTH}

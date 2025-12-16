@@ -1,4 +1,3 @@
-import { FC } from 'react'
 import { LucideIcon } from 'lucide-react'
 import { CardContainer, Header, Title, Content } from './Card.styles'
 import { PositionProps } from '../../styles/mixins'
@@ -19,7 +18,7 @@ export interface CardProps extends PositionProps {
   onTouchCancel?: React.TouchEventHandler<HTMLDivElement>
 }
 
-const Card: FC<CardProps> = ({
+const Card = ({
   title,
   icon: Icon,
   children,
@@ -34,7 +33,7 @@ const Card: FC<CardProps> = ({
   onTouchEnd,
   onTouchCancel,
   ...positionProps
-}) => {
+}: CardProps) => {
   return (
     <CardContainer
       active={active}

@@ -1,4 +1,3 @@
-import React from 'react'
 import { Power, CheckCircle, AlertTriangle, AlertOctagon, LucideIcon } from 'lucide-react'
 import { Container, Label, Badge, StatusText } from './StatusBadge.styles'
 import { PositionProps } from '../../styles/mixins'
@@ -14,14 +13,14 @@ export interface StatusBadgeProps extends PositionProps {
   type?: 'standard' | 'warning'
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({
+const StatusBadge = ({
   label,
   status,
   onLabel = 'ON',
   offLabel = 'OFF',
   faultLabel = 'FALLA',
   ...positionProps
-}) => {
+}: StatusBadgeProps) => {
   let Icon: LucideIcon = Power
   let text = offLabel
   const s = status.toLowerCase()

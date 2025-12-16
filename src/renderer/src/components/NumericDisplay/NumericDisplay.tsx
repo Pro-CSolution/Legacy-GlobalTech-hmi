@@ -162,6 +162,7 @@ const NumericDisplay = ({
       const timer = setTimeout(() => setIsGlowing(false), 1000)
       return () => clearTimeout(timer)
     }
+    return undefined
   }, [value, formattedValue, placeholderText, variant])
 
   // Function to generate placeholder with correct length

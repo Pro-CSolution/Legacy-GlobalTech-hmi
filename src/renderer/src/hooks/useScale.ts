@@ -1,7 +1,8 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, RefObject } from 'react'
+import { debugLog, isDebugEnabled } from 'utils/debug'
 
 interface UseAspectScaleReturn {
-  containerRef: React.RefObject<HTMLDivElement | null>
+  containerRef: RefObject<HTMLDivElement | null>
   scale: number
 }
 
@@ -10,6 +11,7 @@ export const useAspectScale = (baseWidth: number, baseHeight: number): UseAspect
   const [scale, setScale] = useState(1)
 
   useEffect(() => {
+    let lastLogAt = -Infinity
     const resize = (): void => {
       if (!containerRef.current) return
       const { clientWidth, clientHeight } = containerRef.current
@@ -22,6 +24,18 @@ export const useAspectScale = (baseWidth: number, baseHeight: number): UseAspect
       const minScale = Math.min(scaleW, scaleH)
 
       setScale(minScale)
+
+      if (isDebugEnabled('trend') || isDebugEnabled('scale') || isDebugEnabled('trend.scale')) {
+        const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+        if (now - lastLogAt >= 250) {
+          lastLogAt = now
+          debugLog('trend.scale', 'useAspectScale resize', {
+            base: { width: baseWidth, height: baseHeight },
+            container: { width: clientWidth, height: clientHeight },
+            scale: { w: scaleW, h: scaleH, min: minScale }
+          })
+        }
+      }
     }
 
     const observer = new ResizeObserver(resize)

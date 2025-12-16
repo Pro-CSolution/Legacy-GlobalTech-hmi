@@ -1,4 +1,3 @@
-import React from 'react'
 import { PanelContainer } from './Panel.styles'
 import { PositionProps } from '../../styles/mixins'
 
@@ -7,7 +6,7 @@ export interface PanelProps extends PositionProps {
   className?: string
 }
 
-const Panel: React.FC<PanelProps> = ({ children, className, ...positionProps }) => {
+const Panel = ({ children, className, ...positionProps }: PanelProps) => {
   return (
     <PanelContainer className={className} {...positionProps}>
       {children}

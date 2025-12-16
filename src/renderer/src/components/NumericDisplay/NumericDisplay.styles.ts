@@ -279,7 +279,7 @@ export const ValueContainer = styled.div<{
   }};
 
   /* Familia de fuente por variante */
-  font-family: ${({ variant, fontFamily, theme }) => {
+  font-family: ${({ fontFamily, theme }) => {
     if (fontFamily) return fontFamily
     return theme.typography.fontFamily
   }};

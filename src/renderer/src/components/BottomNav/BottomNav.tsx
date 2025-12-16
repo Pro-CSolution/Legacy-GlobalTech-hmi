@@ -1,4 +1,3 @@
-import { FC } from 'react'
 import { BottomNavContainer, NavButton, ButtonIcon, ButtonLabel } from './BottomNav.styles'
 import { useNavigate, useLocation } from 'react-router'
 import type { IconType } from 'react-icons'
@@ -15,7 +14,7 @@ interface BottomNavProps {
   buttons?: NavButtonData[]
 }
 
-const BottomNav: FC<BottomNavProps> = ({ buttons }) => {
+const BottomNav = ({ buttons }: BottomNavProps) => {
   const navigate = useNavigate()
   const location = useLocation()
 

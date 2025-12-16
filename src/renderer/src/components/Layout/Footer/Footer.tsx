@@ -1,9 +1,17 @@
-import React from 'react'
-import { LayoutDashboard, Thermometer, Wind, LineChart, Menu, List, Layers } from 'lucide-react'
+import {
+  LayoutDashboard,
+  Thermometer,
+  Bell,
+  LineChart,
+  Menu,
+  List,
+  Layers,
+  Droplets
+} from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
 import { FooterContainer, NavButton, Label } from './Footer.styles'
 
-const Footer: React.FC = () => {
+const Footer = () => {
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -24,9 +32,14 @@ const Footer: React.FC = () => {
         <Label>TEMPERATURES</Label>
       </NavButton>
 
-      <NavButton $active={currentPath === '/coolant'} onClick={() => navigate('/coolant')}>
-        <Wind size={iconsSize} />
-        <Label>COOLING</Label>
+      <NavButton $active={currentPath === '/vfd-coolant'} onClick={() => navigate('/vfd-coolant')}>
+        <Droplets size={iconsSize} />
+        <Label>COOLANT</Label>
+      </NavButton>
+
+      <NavButton $active={currentPath === '/alarms'} onClick={() => navigate('/alarms')}>
+        <Bell size={iconsSize} />
+        <Label>ALARMS</Label>
       </NavButton>
 
       <NavButton $active={currentPath === '/trends'} onClick={() => navigate('/trends')}>

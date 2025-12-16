@@ -35,23 +35,24 @@ export const PARAMETER_IDS = [
   'P10.00',
   'P10.01',
   'P10.02',
-  'P10.03',
-  'P10.04',
-  'P10.05',
-  'P10.06',
-  'P10.07',
-  'P10.08',
-  'P10.09',
   'P10.10',
   'P10.11',
   'P10.12',
   'P10.13',
   'P10.14',
-  'P10.15',
-  'P10.16',
-  'P10.17',
-  'P10.18',
-  'P10.19',
+  'P10.20',
+  'P10.21',
+  'P10.22',
+  'P10.23',
+  'P10.24',
+  'P10.25',
+  'P10.26',
+  'P10.27',
+  'P10.28',
+  'P10.29',
+  'P10.30',
+  'P10.31',
+  'P10.34',
   'P11.00',
   'P11.01',
   'P11.03',
@@ -100,8 +101,7 @@ export const PARAMETER_IDS = [
   'Temp_Winding_A1',
   'Temp_Winding_B1',
   'Temp_Winding_C1',
-  'Trans_Cooling_Start',
-  'Wago_Discrete_15'
+  'Trans_Cooling_Start'
 ] as const
 
 export type ParameterId = (typeof PARAMETER_IDS)[number]
@@ -146,23 +146,24 @@ export const DEVICE_PARAMETERS: Record<DeviceId, ParameterId[]> = {
     'P10.00',
     'P10.01',
     'P10.02',
-    'P10.03',
-    'P10.04',
-    'P10.05',
-    'P10.06',
-    'P10.07',
-    'P10.08',
-    'P10.09',
     'P10.10',
     'P10.11',
     'P10.12',
     'P10.13',
     'P10.14',
-    'P10.15',
-    'P10.16',
-    'P10.17',
-    'P10.18',
-    'P10.19',
+    'P10.20',
+    'P10.21',
+    'P10.22',
+    'P10.23',
+    'P10.24',
+    'P10.25',
+    'P10.26',
+    'P10.27',
+    'P10.28',
+    'P10.29',
+    'P10.30',
+    'P10.31',
+    'P10.34',
     'P11.00',
     'P11.01',
     'P11.03',
@@ -214,8 +215,7 @@ export const DEVICE_PARAMETERS: Record<DeviceId, ParameterId[]> = {
     'RB_Drive_Start',
     'RB_Drive_Reset',
     'Main_CB_Closed_Light',
-    'Drive_Cooling_Start',
-    'Wago_Discrete_15'
+    'Drive_Cooling_Start'
   ] as const
 } as const
 
@@ -455,62 +455,6 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     range: { min: 100, max: 199 },
     attributes: ['R'] as const
   },
-  'P10.03': {
-    id: 'P10.03',
-    alias: 'warning4',
-    name: 'Warning No. 4',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
-  'P10.04': {
-    id: 'P10.04',
-    alias: 'warning5',
-    name: 'Warning No. 5',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
-  'P10.05': {
-    id: 'P10.05',
-    alias: 'warning6',
-    name: 'Warning No. 6',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
-  'P10.06': {
-    id: 'P10.06',
-    alias: 'warning7',
-    name: 'Warning No. 7',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
-  'P10.07': {
-    id: 'P10.07',
-    alias: 'warning8',
-    name: 'Warning No. 8',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
-  'P10.08': {
-    id: 'P10.08',
-    alias: 'warning9',
-    name: 'Warning No. 9',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
-  'P10.09': {
-    id: 'P10.09',
-    alias: 'warning10',
-    name: 'Warning No. 10',
-    menu: 10,
-    range: { min: 100, max: 199 },
-    attributes: ['R'] as const
-  },
   'P10.10': {
     id: 'P10.10',
     alias: 'trip1',
@@ -547,40 +491,112 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     menu: 10,
     attributes: ['R'] as const
   },
-  'P10.15': {
-    id: 'P10.15',
-    alias: 'trip6',
-    name: 'Trip No. 6',
+  'P10.20': {
+    id: 'P10.20',
+    alias: 'tripHistory1',
+    name: 'Trip History 1',
     menu: 10,
+    description: 'Represents Trip History 1 to Trip History 10 (P10.20 to P10.29)',
+    range: { min: 0, max: 999 },
     attributes: ['R'] as const
   },
-  'P10.16': {
-    id: 'P10.16',
-    alias: 'trip7',
-    name: 'Trip No. 7',
+  'P10.21': {
+    id: 'P10.21',
+    alias: 'tripHistory2',
+    name: 'Trip History 2',
     menu: 10,
+    range: { min: 0, max: 999 },
     attributes: ['R'] as const
   },
-  'P10.17': {
-    id: 'P10.17',
-    alias: 'trip8',
-    name: 'Trip No. 8',
+  'P10.22': {
+    id: 'P10.22',
+    alias: 'tripHistory3',
+    name: 'Trip History 3',
     menu: 10,
+    range: { min: 0, max: 999 },
     attributes: ['R'] as const
   },
-  'P10.18': {
-    id: 'P10.18',
-    alias: 'trip9',
-    name: 'Trip No. 9',
+  'P10.23': {
+    id: 'P10.23',
+    alias: 'tripHistory4',
+    name: 'Trip History 4',
     menu: 10,
+    range: { min: 0, max: 999 },
     attributes: ['R'] as const
   },
-  'P10.19': {
-    id: 'P10.19',
-    alias: 'trip10',
-    name: 'Trip No. 10',
+  'P10.24': {
+    id: 'P10.24',
+    alias: 'tripHistory5',
+    name: 'Trip History 5',
     menu: 10,
+    range: { min: 0, max: 999 },
     attributes: ['R'] as const
+  },
+  'P10.25': {
+    id: 'P10.25',
+    alias: 'tripHistory6',
+    name: 'Trip History 6',
+    menu: 10,
+    range: { min: 0, max: 999 },
+    attributes: ['R'] as const
+  },
+  'P10.26': {
+    id: 'P10.26',
+    alias: 'tripHistory7',
+    name: 'Trip History 7',
+    menu: 10,
+    range: { min: 0, max: 999 },
+    attributes: ['R'] as const
+  },
+  'P10.27': {
+    id: 'P10.27',
+    alias: 'tripHistory8',
+    name: 'Trip History 8',
+    menu: 10,
+    range: { min: 0, max: 999 },
+    attributes: ['R'] as const
+  },
+  'P10.28': {
+    id: 'P10.28',
+    alias: 'tripHistory9',
+    name: 'Trip History 9',
+    menu: 10,
+    range: { min: 0, max: 999 },
+    attributes: ['R'] as const
+  },
+  'P10.29': {
+    id: 'P10.29',
+    alias: 'tripHistory10',
+    name: 'Trip History 10',
+    menu: 10,
+    range: { min: 0, max: 999 },
+    attributes: ['R'] as const
+  },
+  'P10.30': {
+    id: 'P10.30',
+    alias: 'secondsSinceTrip',
+    name: 'Seconds Since Trip',
+    unit: 's',
+    menu: 10,
+    range: { min: 0, max: 3599 },
+    attributes: ['R'] as const
+  },
+  'P10.31': {
+    id: 'P10.31',
+    alias: 'hoursSinceTrip',
+    name: 'Hours Since Trip',
+    unit: 'h',
+    menu: 10,
+    range: { min: 0, max: 672 },
+    attributes: ['R'] as const
+  },
+  'P10.34': {
+    id: 'P10.34',
+    alias: 'tripReset',
+    name: 'CF9: Trip Reset',
+    menu: 10,
+    description: 'Control Flag (Dig I/P 6)',
+    attributes: ['E', 'N'] as const
   },
   'P11.00': {
     id: 'P11.00',
@@ -985,14 +1001,6 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     unit: 'Bool',
     description: 'Transformer Cooling Fan Start',
     attributes: ['R', 'W'] as const
-  },
-  Wago_Discrete_15: {
-    id: 'Wago_Discrete_15',
-    alias: 'wagoDiscrete15',
-    name: 'Wago discrete test @15',
-    unit: 'Bool',
-    description: 'Discrete input at address 15 for trend validation',
-    attributes: ['R'] as const
   }
 } as const
 
@@ -1013,23 +1021,24 @@ export const PARAMETER_ALIASES = {
   warning1: 'P10.00',
   warning2: 'P10.01',
   warning3: 'P10.02',
-  warning4: 'P10.03',
-  warning5: 'P10.04',
-  warning6: 'P10.05',
-  warning7: 'P10.06',
-  warning8: 'P10.07',
-  warning9: 'P10.08',
-  warning10: 'P10.09',
   trip1: 'P10.10',
   trip2: 'P10.11',
   trip3: 'P10.12',
   trip4: 'P10.13',
   trip5: 'P10.14',
-  trip6: 'P10.15',
-  trip7: 'P10.16',
-  trip8: 'P10.17',
-  trip9: 'P10.18',
-  trip10: 'P10.19',
+  tripHistory1: 'P10.20',
+  tripHistory2: 'P10.21',
+  tripHistory3: 'P10.22',
+  tripHistory4: 'P10.23',
+  tripHistory5: 'P10.24',
+  tripHistory6: 'P10.25',
+  tripHistory7: 'P10.26',
+  tripHistory8: 'P10.27',
+  tripHistory9: 'P10.28',
+  tripHistory10: 'P10.29',
+  secondsSinceTrip: 'P10.30',
+  hoursSinceTrip: 'P10.31',
+  tripReset: 'P10.34',
   activeCurrentFLC: 'P11.00',
   magnetisingCurrentFLC: 'P11.01',
   dcLinkVoltage: 'P11.03',
@@ -1056,8 +1065,7 @@ export const PARAMETER_ALIASES = {
   motorCurrentP9: 'P9.05',
   driveCurrent: 'P9.06',
   motorPowerP9: 'P9.08',
-  temperaturexdd: 'Temp_Winding_A1',
-  wagoDiscrete15: 'Wago_Discrete_15'
+  temperaturexdd: 'Temp_Winding_A1'
 } as const
 
 export type ParameterAlias = keyof typeof PARAMETER_ALIASES

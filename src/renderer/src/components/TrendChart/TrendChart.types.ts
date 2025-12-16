@@ -18,6 +18,12 @@ export interface Dataset {
   data: ChartDataPoint[]
   /** Line color */
   borderColor?: string
+  /** Mark dataset como entrada manual */
+  isManual?: boolean
+  /** Render stepped line */
+  stepped?: boolean
+  /** Unidad opcional */
+  unit?: string | null
   /** Fill color (if fill is enabled) */
   backgroundColor?: string
   /** Line width in pixels */
@@ -169,6 +175,8 @@ export interface TrendChartRef {
   getChart: () => uPlot | null
   /** Update chart data programmatically */
   updateData: (newDatasets: Dataset[]) => void
+  /** Export current chart as a data URL (base64) */
+  exportImage: (opts?: { type?: 'image/png' | 'image/jpeg'; quality?: number }) => string | null
   /** Reset chart to initial state */
   reset: () => void
   /** Add a new data point to a dataset */

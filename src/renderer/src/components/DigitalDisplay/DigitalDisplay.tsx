@@ -1,4 +1,4 @@
-import React from 'react'
+
 import { Container, GlowEffect, Label, ValueContainer, Value, Unit } from './DigitalDisplay.styles'
 import { PositionProps } from '../../styles/mixins'
 
@@ -9,13 +9,13 @@ export interface DigitalDisplayProps extends PositionProps {
   size?: 'normal' | 'large'
 }
 
-const DigitalDisplay: React.FC<DigitalDisplayProps> = ({
+const DigitalDisplay = ({
   label,
   value,
   unit,
   size = 'large',
   ...positionProps
-}) => {
+}: DigitalDisplayProps) => {
   return (
     <Container {...positionProps}>
       <GlowEffect />

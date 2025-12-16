@@ -11,7 +11,7 @@ import {
   TrendStatus
 } from '../MainScreen.styles'
 import { PositionProps } from 'styles/mixins'
-import { FC, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useTheme } from 'styled-components'
 
 interface ElectricalParamsProps extends PositionProps {
@@ -22,9 +22,14 @@ interface ElectricalParamsProps extends PositionProps {
     amps: number
     torque: number
   }
+  height?: number
 }
 
-export const ElectricalParams: FC<ElectricalParamsProps> = ({ electrical, ...positionProps }) => {
+export const ElectricalParams = ({
+  electrical,
+  height = 460,
+  ...positionProps
+}: ElectricalParamsProps) => {
   const theme = useTheme()
 
   const gaugeCommonProps = useMemo(
@@ -87,7 +92,7 @@ export const ElectricalParams: FC<ElectricalParamsProps> = ({ electrical, ...pos
   )
 
   return (
-    <Panel width={1080} height={465} {...positionProps}>
+    <Panel width={1080} height={height} {...positionProps}>
       <Card title="Electrical Parameters" icon={Zap} height="100%">
         <ElectricalGrid>
           {gauges.map(({ label, ...gaugeProps }) => (

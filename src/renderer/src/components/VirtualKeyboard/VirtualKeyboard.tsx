@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronUp, Delete, X, ArrowLeft } from 'lucide-react'
 import {
@@ -28,7 +29,7 @@ export interface VirtualKeyboardProps {
 type KeyDef = {
   key: string
   action?: 'backspace' | 'clear' | 'cancel' | 'confirm' | 'shift' | 'space'
-  icon?: JSX.Element
+  icon?: ReactNode
   variant?: 'confirm' | 'cancel' | 'special'
 }
 

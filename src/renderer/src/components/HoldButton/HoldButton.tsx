@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, ReactNode } from 'react'
 import styled from 'styled-components'
 
 interface HoldButtonProps {
@@ -7,7 +7,7 @@ interface HoldButtonProps {
   holdTimeMs?: number
   disabled?: boolean
   color?: string
-  children?: React.ReactNode
+  children?: ReactNode
 }
 
 const ButtonContainer = styled.button<{ $disabled?: boolean; $color?: string }>`
@@ -39,20 +39,40 @@ const RadialOverlay = styled.div<{ $progress: number }>`
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.32);
   transform-origin: left;
   transform: scaleX(${({ $progress }) => $progress / 100});
-  transition: transform 0.05s linear;
+  transition: transform 0.04s linear;
 `
 
-export const HoldButton: React.FC<HoldButtonProps> = ({
+const ProgressBar = styled.div<{ $progress: number; $color?: string }>`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  background: ${({ theme }) => `${theme.colors.text.inverse}a0`};
+  overflow: hidden;
+  border-radius: 0 0 ${({ theme }) => theme.borderRadius.md} ${({ theme }) => theme.borderRadius.md};
+
+  &::after {
+    content: '';
+    display: block;
+    height: 100%;
+    width: ${({ $progress }) => $progress}%;
+    background: ${({ theme, $color }) => $color || theme.colors.text.inverse};
+    transition: width 0.04s linear;
+  }
+`
+
+export const HoldButton = ({
   onHoldComplete,
   label = 'HOLD TO APPLY',
   holdTimeMs = 1000,
   disabled = false,
   color,
   children
-}) => {
+}: HoldButtonProps) => {
   const [progress, setProgress] = useState(0)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const startTimeRef = useRef<number>(0)
@@ -102,6 +122,7 @@ export const HoldButton: React.FC<HoldButtonProps> = ({
       onTouchEnd={stop}
     >
       <RadialOverlay $progress={progress} />
+      <ProgressBar $progress={progress} $color={color} />
       <div style={{ position: 'relative', zIndex: 1 }}>{children || label}</div>
     </ButtonContainer>
   )

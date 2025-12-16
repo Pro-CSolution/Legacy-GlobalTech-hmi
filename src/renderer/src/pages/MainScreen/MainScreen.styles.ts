@@ -9,7 +9,7 @@ export const MainContainer = styled.div`
 export const StatusList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 `
 
 export const WarningGroup = styled.div`
@@ -24,7 +24,7 @@ export const WarningGroup = styled.div`
 export const ElectricalGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  gap: 8px;
   height: 100%;
 `
 
@@ -34,7 +34,7 @@ export const GaugeTile = styled.div`
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 8px;
+  padding: 0px;
   background: none;
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   border-radius: ${({ theme }) => theme.borderRadius.md};
@@ -81,7 +81,7 @@ export const SliderWrapper = styled.div`
 `
 
 export const SliderContainer = styled.div`
-  padding: 0 24px;
+  padding: 0 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -93,7 +93,7 @@ export const SliderHeader = styled.div`
   justify-content: space-between;
   align-items: flex-end;
   width: 100%;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 `
 
 export const SliderLabel = styled.span`
@@ -139,7 +139,7 @@ export const ButtonGroup = styled.div`
   justify-content: space-between;
   width: 100%;
   height: 70px;
-  margin-top: 30px;
+  margin-top: 20px;
   gap: 12px;
 `
 
@@ -173,7 +173,6 @@ export const DriveStatusRow = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
 `
 
 export const DriveLabel = styled.span`
@@ -220,7 +219,7 @@ export const DriveKeypadSection = styled.div`
   display: flex;
   justify-content: center;
   padding: 5px 0;
-  height: 460px;
+  height: 360px;
   cursor: pointer;
 `
 
@@ -228,4 +227,68 @@ export const EmergencyStopContainer = styled.div`
   margin-top: auto;
   padding-top: 24px;
   border-top: 1px solid ${({ theme }) => theme.colors.borders.primary};
+`
+
+export const InlineStatus = styled.div<{ $tone: 'success' | 'error' }>`
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  border: 1px solid
+    ${({ theme, $tone }) =>
+      $tone === 'success' ? theme.colors.status.running : theme.colors.status.alarm};
+  background: ${({ theme, $tone }) =>
+    $tone === 'success' ? `${theme.colors.status.running}20` : `${theme.colors.status.alarm}20`};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: ${({ theme }) => theme.typography.sizes.sm};
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`
+
+// Compact styles for SpeedControl
+export const CompactSliderWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  padding: 5px 20px;
+`
+
+export const CompactMainRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 20px;
+  margin-bottom: 8px;
+`
+
+export const CompactButtonPair = styled.div`
+  display: flex;
+  gap: 8px;
+  flex: 1;
+
+  ${AdjustmentButton} {
+    padding: 8px;
+    height: 44px;
+    font-size: ${({ theme }) => theme.typography.sizes.lg};
+  }
+`
+
+export const CompactSliderValue = styled.span`
+  font-family: 'Roboto Mono', monospace;
+  font-size: 48px;
+  font-weight: bold;
+  color: ${({ theme }) => theme.colors.accent.primary};
+  min-width: 140px;
+  text-align: center;
+`
+
+export const SliderRangeWrapper = styled.div`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 `
