@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { ScreenLayout } from 'layouts'
 import { useTrendData } from 'hooks'
 import { PARAMETER_ALIASES } from 'types/generated/devices'
@@ -23,7 +23,7 @@ const VfdCoolantScreen = () => {
   // Mock State for UI Demo
   const [pump1Running, setPump1Running] = useState(false)
   const [pump2Running, setPump2Running] = useState(true)
-  const [systemFault, setSystemFault] = useState(false)
+  const [systemFault] = useState(false)
   const [flowLow, setFlowLow] = useState(false)
 
   // Simulated Analog Values
@@ -52,7 +52,7 @@ const VfdCoolantScreen = () => {
   }, [])
 
   return (
-    <ScreenLayout title="VFD COOLANT SYSTEM">
+    <ScreenLayout>
       <MainGrid>
         {/* Left Control Panel */}
         <LeftColumn>

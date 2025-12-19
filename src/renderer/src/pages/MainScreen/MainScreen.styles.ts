@@ -277,13 +277,29 @@ export const CompactButtonPair = styled.div`
   }
 `
 
-export const CompactSliderValue = styled.span`
+export const CompactSliderValue = styled.span<{ $isSyncing?: boolean }>`
   font-family: 'Roboto Mono', monospace;
   font-size: 48px;
   font-weight: bold;
-  color: ${({ theme }) => theme.colors.accent.primary};
+  color: ${({ theme, $isSyncing }) =>
+    $isSyncing ? theme.colors.text.secondary : theme.colors.accent.primary};
   min-width: 140px;
   text-align: center;
+  transition: color 0.3s ease;
+  opacity: ${({ $isSyncing }) => ($isSyncing ? 0.7 : 1)};
+  animation: ${({ $isSyncing }) => ($isSyncing ? 'pulse 1.5s infinite ease-in-out' : 'none')};
+
+  @keyframes pulse {
+    0% {
+      opacity: 0.5;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.5;
+    }
+  }
 `
 
 export const SliderRangeWrapper = styled.div`

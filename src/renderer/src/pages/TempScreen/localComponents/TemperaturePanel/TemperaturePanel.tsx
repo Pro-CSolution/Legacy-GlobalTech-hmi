@@ -11,10 +11,6 @@ export interface TemperatureData {
   minValue?: number
   maxValue?: number
   unitOfMeasure?: string
-  endLL?: number
-  endL?: number
-  startH?: number
-  startHH?: number
 }
 
 interface TemperaturePanelProps extends PositionProps {
@@ -40,10 +36,6 @@ export const TemperaturePanel = ({
     minValue: 0,
     maxValue: 200,
     unitOfMeasure: 'DEG F',
-    endLL: 20,
-    endL: 50,
-    startH: 160,
-    startHH: 180,
     size: { width: 80, height: 220 } // Adjusted size for card
   }
 

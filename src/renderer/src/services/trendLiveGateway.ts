@@ -22,6 +22,33 @@ export type TrendUpdatePayload = {
   ts?: string
 }
 
+// Mantiene las subscripciones activas para re-hacerlas automáticamente en reconnect.
+const trendSubscriptions = new Map<DeviceId, ParameterId[]>()
+let trendReplayBound = false
+
+const bindTrendReplay = (): void => {
+  if (trendReplayBound) return
+  trendReplayBound = true
+
+  const replay = () => {
+    for (const [deviceId, parameterIds] of trendSubscriptions.entries()) {
+      if (!deviceId || !parameterIds.length) continue
+      socketService.emit(SOCKET_EVENTS.SUBSCRIBE_TREND, {
+        device_id: deviceId,
+        parameter_ids: parameterIds
+      })
+    }
+  }
+
+  socketService.connect()
+  socketService.on('connect', replay)
+
+  // En HMR/StrictMode puede estar conectado antes de registrar el listener.
+  if (socketService.isConnected()) {
+    replay()
+  }
+}
+
 export async function fetchTrendHistory({
   deviceId,
   parameterIds,
@@ -47,42 +74,30 @@ export function ensureTrendSocket() {
 }
 
 export function subscribeTrend(deviceId: DeviceId, parameterIds: ParameterId[]): void {
-  ensureTrendSocket()
+  if (!deviceId || !parameterIds.length) return
 
+  const uniqueParameterIds = Array.from(new Set(parameterIds.filter(Boolean))) as ParameterId[]
+  trendSubscriptions.set(deviceId, uniqueParameterIds)
+  bindTrendReplay()
+
+  ensureTrendSocket()
   if (socketService.isConnected()) {
     socketService.emit(SOCKET_EVENTS.SUBSCRIBE_TREND, {
       device_id: deviceId,
-      parameter_ids: parameterIds
-    })
-    return
-  }
-
-  const handleConnect = () => {
-    socketService.off('connect', handleConnect)
-    socketService.emit(SOCKET_EVENTS.SUBSCRIBE_TREND, {
-      device_id: deviceId,
-      parameter_ids: parameterIds
+      parameter_ids: uniqueParameterIds
     })
   }
-  socketService.on('connect', handleConnect)
 }
 
 export function unsubscribeTrend(deviceId: DeviceId): void {
-  ensureTrendSocket()
+  if (!deviceId) return
 
-  const emitUnsub = () =>
-    socketService.emit(SOCKET_EVENTS.UNSUBSCRIBE_TREND, { device_id: deviceId })
+  trendSubscriptions.delete(deviceId)
 
+  // Si no estamos conectados, no hace falta (en el próximo connect ya no se re-suscribe).
   if (socketService.isConnected()) {
-    emitUnsub()
-    return
+    socketService.emit(SOCKET_EVENTS.UNSUBSCRIBE_TREND, { device_id: deviceId })
   }
-
-  const handleConnect = () => {
-    socketService.off('connect', handleConnect)
-    emitUnsub()
-  }
-  socketService.on('connect', handleConnect)
 }
 
 export function onTrendUpdate(callback: (payload: TrendUpdatePayload) => void): () => void {

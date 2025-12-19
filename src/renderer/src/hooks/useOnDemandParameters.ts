@@ -7,7 +7,11 @@ type UseOnDemandParams = {
   limit?: number
 }
 
-export const useOnDemandParameters = ({ deviceId, parameterIds, limit = 18 }: UseOnDemandParams) => {
+export const useOnDemandParameters = ({
+  deviceId,
+  parameterIds,
+  limit = 18
+}: UseOnDemandParams) => {
   const currentRef = useRef<string[]>([])
 
   useEffect(() => {
@@ -36,15 +40,3 @@ export const useOnDemandParameters = ({ deviceId, parameterIds, limit = 18 }: Us
     }
   }, [deviceId, parameterIds, limit])
 }
-
-
-
-
-
-
-
-
-
-
-
-

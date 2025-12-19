@@ -152,17 +152,22 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
   const [isRunning, setIsRunning] = useState(true)
   const [runToken, setRunToken] = useState(0) // used to trigger re-run on retry
   const { devicesData, subscribeDevice, unsubscribeDevice } = useRealtime()
+  const devicesDataRef = useRef(devicesData)
   const [paramMeta, setParamMeta] = useState<Record<string, { name?: string }>>({})
   const initRef = useRef<number | null>(null)
   const subRef = useRef<number | null>(null)
   const itemsRef = useRef<ItemState[]>([])
+
+  // Keep latest realtime snapshot in a ref so verification timers don't get reset by frequent updates.
+  useEffect(() => {
+    devicesDataRef.current = devicesData
+  }, [devicesData])
 
   // Helper to update state and ref synchronously to avoid stale closures in async/intervals
   const setItemsSync = (updater: (prev: ItemState[]) => ItemState[]) => {
     setItems((prev) => {
       const next = updater(prev)
       itemsRef.current = next
-      // console.log('[DEBUG] Items updated:', next.map(i => `${i.id}=${i.status}`))
       return next
     })
   }
@@ -171,7 +176,6 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
   useEffect(() => {
     if (initRef.current === profile.id) return
     initRef.current = profile.id
-    console.log('[DEBUG] Init with profile:', profile.id, profile.name)
     const initial = profile.parameters.map((p) => ({
       id: `${p.device_id}:${p.parameter_id}`,
       device_id: p.device_id,
@@ -201,7 +205,7 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
             return [key, { name: found.name }]
           }
         } catch (err) {
-          console.warn('[DEBUG] Param meta fetch failed', key, err)
+          // fetch failed
         }
         return [key, {}]
       })
@@ -302,13 +306,6 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
       mounted = false
     }
   }, [profile.id, isRunning, runToken, items.length])
-  // IMPORTANT: depended on items.length instead of items to avoid loop if items update but count stays same?
-  // No, we need to run once when pending items exist. If we depend on 'items', setting 'writing' status changes 'items', re-triggering effect.
-  // But inside run() we check pending status.
-  // Ideally this should be an imperative call or checking a flag.
-  // Let's rely on runToken or initial mount.
-  // To avoid loop, we check if we have pending items that are NOT writing.
-  // Actually, 'writing' is set immediately.
 
   // Verification Logic (Realtime)
   useEffect(() => {
@@ -325,13 +322,12 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
         }
 
         // Check realtime
-        const deviceData = devicesData[item.device_id]
+        const deviceData = devicesDataRef.current[item.device_id]
         const nowTs = Date.now()
 
         if (!deviceData) {
           // Fallback: if no realtime within 4s, assume success if API was success
           if (item.startedAt && nowTs - item.startedAt > 4000 && item.apiStatus !== 'error') {
-            console.log(`[DEBUG] Item ${item.id} timeout (no data) -> Assumed Success`)
             changes = true
             return {
               ...item,
@@ -345,20 +341,13 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
         const actual = deviceData[item.parameter_id]
 
         // Loose equality check
-
         if (actual == item.target_value) {
-          console.log(
-            `[DEBUG] Item ${item.id} VERIFIED! Actual: ${actual}, Target: ${item.target_value}`
-          )
           changes = true
           return { ...item, status: 'success' as VerificationStatus, message: 'Verified' }
         }
 
         // If realtime arrived but value mismatched for >4s, mark error
         if (item.startedAt && nowTs - item.startedAt > 4000) {
-          console.warn(
-            `[DEBUG] Item ${item.id} VERIFICATION FAILED. Actual: ${actual}, Target: ${item.target_value}`
-          )
           changes = true
           return {
             ...item,
@@ -381,7 +370,6 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
       )
 
       if (!stillActive && isRunning) {
-        console.log('[DEBUG] All items finished processing.')
         setIsRunning(false)
       }
     }, 500)
@@ -389,15 +377,13 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
     return () => {
       clearInterval(interval)
     }
-  }, [isRunning, devicesData])
+  }, [isRunning, profile.id])
 
   const handleRetry = async () => {
-    console.log('[DEBUG] Retry requested')
     // Reset only errored items to pending and trigger re-run
     setItemsSync((prev) =>
       prev.map((p) => {
         if (p.status === 'error') {
-          console.log(`[DEBUG] Resetting item ${p.id} to pending`)
           return {
             ...p,
             status: 'pending',
@@ -418,7 +404,6 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
   const errorCount = items.filter((i) => i.status === 'error').length
 
   const handleCancel = () => {
-    console.log('[DEBUG] Cancelled by user')
     setIsRunning(false)
     onCancel?.()
   }

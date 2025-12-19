@@ -1,5 +1,5 @@
 import { LucideIcon } from 'lucide-react'
-import { CardContainer, Header, Title, Content } from './Card.styles'
+import { CardContainer, Header, HeaderLeft, HeaderRight, Title, Content } from './Card.styles'
 import { PositionProps } from '../../styles/mixins'
 
 export interface CardProps extends PositionProps {
@@ -9,6 +9,7 @@ export interface CardProps extends PositionProps {
   className?: string
   titleColor?: string
   active?: boolean
+  headerRight?: React.ReactNode
   onClick?: React.MouseEventHandler<HTMLDivElement>
   onMouseDown?: React.MouseEventHandler<HTMLDivElement>
   onMouseUp?: React.MouseEventHandler<HTMLDivElement>
@@ -25,6 +26,7 @@ const Card = ({
   className,
   titleColor,
   active = true,
+  headerRight,
   onClick,
   onMouseDown,
   onMouseUp,
@@ -49,8 +51,11 @@ const Card = ({
     >
       {title && (
         <Header>
-          {Icon && <Icon size={26} color={titleColor || '#06b6d4'} />}
-          <Title color={titleColor}>{title}</Title>
+          <HeaderLeft>
+            {Icon && <Icon size={26} color={titleColor || '#06b6d4'} />}
+            <Title color={titleColor}>{title}</Title>
+          </HeaderLeft>
+          {headerRight ? <HeaderRight>{headerRight}</HeaderRight> : null}
         </Header>
       )}
       <Content>{children}</Content>

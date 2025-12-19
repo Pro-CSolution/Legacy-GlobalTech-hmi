@@ -43,7 +43,10 @@ export const TrendToolbar = ({
       </S.ButtonGroup>
 
       <S.ButtonGroup>
-        <S.ActionButton $variant={isVariablesOpen ? 'primary' : undefined} onClick={onToggleVariables}>
+        <S.ActionButton
+          $variant={isVariablesOpen ? 'primary' : undefined}
+          onClick={onToggleVariables}
+        >
           <Filter size={14} />
           <span>VARIABLES ({selectedCount})</span>
         </S.ActionButton>

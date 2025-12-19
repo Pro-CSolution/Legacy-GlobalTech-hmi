@@ -320,7 +320,10 @@ export const VariableButton = styled.button<{ $isSelected: boolean; $isDisabled:
     $isSelected ? `${theme.colors.accent.primary}20` : theme.colors.background.primary};
   cursor: ${({ $isDisabled }) => ($isDisabled ? 'not-allowed' : 'pointer')};
   opacity: ${({ $isDisabled }) => ($isDisabled ? 0.5 : 1)};
-  transition: background 0.2s, border-color 0.2s, transform 0.05s;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.05s;
 
   &:hover {
     border-color: ${({ $isDisabled, theme }) =>

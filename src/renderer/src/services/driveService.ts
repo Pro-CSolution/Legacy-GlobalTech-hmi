@@ -30,15 +30,3 @@ export const getDriveParameters = async ({
     page_size: pageSize
   })
 }
-
-
-
-
-
-
-
-
-
-
-
-

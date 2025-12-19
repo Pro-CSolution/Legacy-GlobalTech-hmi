@@ -28,15 +28,3 @@ export type DriveParametersResponse = {
   page: number
   page_size: number
 }
-
-
-
-
-
-
-
-
-
-
-
-

@@ -71,7 +71,9 @@ export const PARAMETER_IDS = [
   'P2.01',
   'P2.02',
   'P2.03',
+  'P21.01',
   'P5.00',
+  'P5.01',
   'P5.14',
   'P5.22',
   'P8.00',
@@ -136,6 +138,7 @@ export const DEVICE_PARAMETERS: Record<DeviceId, ParameterId[]> = {
     'P2.02',
     'P2.03',
     'P5.00',
+    'P5.01',
     'P5.14',
     'P5.22',
     'P8.00',
@@ -178,7 +181,8 @@ export const DEVICE_PARAMETERS: Record<DeviceId, ParameterId[]> = {
     'P11.19',
     'P11.20',
     'P11.49',
-    'P11.50'
+    'P11.50',
+    'P21.01'
   ] as const,
   wago: [
     'Remote_Speed_In',
@@ -762,6 +766,15 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     menu: 2,
     attributes: ['S', 'E', 'N'] as const
   },
+  'P21.01': {
+    id: 'P21.01',
+    alias: 'fixedReference1',
+    name: 'Fixed Reference #1',
+    unit: '%',
+    menu: 21,
+    range: { min: -100, max: 100 },
+    attributes: ['E'] as const
+  },
   'P5.00': {
     id: 'P5.00',
     alias: 'speedReferenceP5',
@@ -771,6 +784,14 @@ export const PARAMETER_META: Record<ParameterId, ParameterMeta> = {
     description: '0.01% of Top Speed (0.1% from Push Buttons)',
     range: { min: -100, max: 100 },
     attributes: ['O'] as const
+  },
+  'P5.01': {
+    id: 'P5.01',
+    alias: 'speedReferenceSource',
+    name: 'Speed Reference 1 Source',
+    menu: 5,
+    range: { min: 1, max: 22 },
+    attributes: ['E', 'N', 'L'] as const
   },
   'P5.14': {
     id: 'P5.14',
@@ -1057,7 +1078,9 @@ export const PARAMETER_ALIASES = {
   motorBaseVoltage: 'P2.01',
   motorFullLoadCurrentP2: 'P2.02',
   motorNominalPowerP2: 'P2.03',
+  fixedReference1: 'P21.01',
   speedReferenceP5: 'P5.00',
+  speedReferenceSource: 'P5.01',
   jogSpeed1: 'P5.14',
   processTopSpeed: 'P5.22',
   torqueLimitPositive1: 'P8.00',

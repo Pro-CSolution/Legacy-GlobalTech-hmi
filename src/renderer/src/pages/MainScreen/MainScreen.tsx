@@ -20,7 +20,7 @@ const TREND_ALIASES: ParameterAlias[] = ['torqueDemand', 'dcLinkVoltage', 'speed
 const MainScreen = () => {
   const driveId: DeviceId = 'drive_avid'
 
-  const { data: driveData } = useDeviceData(driveId)
+  const { data: driveData, raw: driveRaw } = useDeviceData(driveId)
 
   const { writeParameter } = useSendCommand()
   const { xDomain: trendXDomain, getDataset: getTrendDataset } = useTrendData(
@@ -79,7 +79,7 @@ const MainScreen = () => {
     setSpeedRef(value)
     await writeParameter({
       deviceId: driveId,
-      parameterId: driveData.speedReference?.id,
+      parameterId: 'P21.01',
       value
     })
   }
@@ -101,12 +101,18 @@ const MainScreen = () => {
         />
 
         {/* Center Top: Electrical (Absolute Position) */}
-        <ElectricalParams electrical={electrical} position={{ left: 420, top: 0 }} height={460} />
+        <ElectricalParams
+          deviceId={driveId}
+          deviceSnapshot={driveRaw}
+          position={{ left: 420, top: 0 }}
+          height={460}
+        />
 
         {/* Center Bottom: Speed Control (Absolute Position) */}
         <SpeedControl
           speedRef={speedRef}
           setSpeedRef={handleSetSpeedRef}
+          speedReferenceSourceValue={driveData.speedReferenceSource?.value}
           position={{ left: 420, bottom: 1 }}
           height={185}
           width={1080}

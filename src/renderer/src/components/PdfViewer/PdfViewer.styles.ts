@@ -24,14 +24,28 @@ export const ToolbarGroup = styled.div`
   gap: 10px;
 `
 
-export const ToolButton = styled.button`
+export const SearchContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: ${({ theme }) => theme.colors.background.secondary};
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  padding: 2px;
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+`
+
+export const ToolButton = styled.button<{ $active?: boolean }>`
   min-width: 56px;
   height: 52px;
   padding: 0 14px;
   border-radius: ${({ theme }) => theme.borderRadius.md};
-  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
-  background: ${({ theme }) => theme.colors.background.secondary};
-  color: ${({ theme }) => theme.colors.text.primary};
+  border: 1px solid
+    ${({ theme, $active }) =>
+      $active ? theme.colors.accent.primary : theme.colors.borders.primary};
+  background: ${({ theme, $active }) =>
+    $active ? `${theme.colors.accent.primary}1A` : theme.colors.background.secondary};
+  color: ${({ theme, $active }) =>
+    $active ? theme.colors.accent.primary : theme.colors.text.primary};
   font-weight: ${({ theme }) => theme.typography.weights.bold};
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -58,7 +72,7 @@ export const ToolButton = styled.button`
 
 export const PageIndicator = styled.button`
   height: 52px;
-  min-width: 200px;
+  min-width: 140px;
   padding: 0 16px;
   border-radius: ${({ theme }) => theme.borderRadius.md};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
@@ -89,6 +103,44 @@ export const Viewer = styled.div`
   background: ${({ theme }) => theme.colors.background.primary};
   overflow: auto;
   padding: 12px;
+
+  /* Custom Scrollbar */
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: ${({ theme }) => theme.colors.background.secondary};
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: ${({ theme }) => theme.colors.borders.primary};
+    border-radius: 5px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: ${({ theme }) => theme.colors.text.secondary};
+  }
+
+  /*
+    TEXT LAYER STYLES
+    Required for correct highlighting overlay
+  */
+  .react-pdf__Page__textContent {
+    span {
+      opacity: 1;
+      color: transparent;
+    }
+  }
+
+  /* Highlight style (used by PdfViewer customTextRenderer) */
+  mark.pdf-highlight {
+    background-color: ${({ theme }) => `${theme.colors.status.warning}80`};
+    border-radius: 2px;
+    padding: 0 1px;
+    color: transparent; /* keep canvas text visible, only show highlight bg */
+  }
 `
 
 export const PageWrap = styled.div`

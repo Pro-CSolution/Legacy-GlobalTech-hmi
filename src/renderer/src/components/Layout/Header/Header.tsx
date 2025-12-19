@@ -1,4 +1,4 @@
-import { BellRing } from 'lucide-react'
+import { BellRing, Settings } from 'lucide-react'
 import { useNavigate } from 'react-router'
 import { useCurrentTime, useDeviceData } from '../../../hooks'
 import { DeviceId } from 'types'
@@ -8,8 +8,6 @@ import {
   Badge,
   BadgeLabel,
   BadgeValue,
-  Divider,
-  InfoText,
   RightSection,
   TimeBlock,
   AlarmButton,
@@ -18,14 +16,39 @@ import {
   AlarmCounts,
   AlarmAge,
   Time,
-  DateText
+  DateText,
+  CommGroup,
+  CommPill,
+  CommDot,
+  CommText,
+  CommTitle,
+  CommValue,
+  CommSub,
+  ConfigButton
 } from './Header.styles'
 
 const Header = () => {
   const navigate = useNavigate()
   const currentTime = useCurrentTime()
   const driveId: DeviceId = 'drive_avid'
-  const { data: driveData } = useDeviceData(driveId)
+  const wagoId: DeviceId = 'wago'
+  const { data: driveData, raw: driveRaw, isConnected: socketConnected } = useDeviceData(driveId)
+  const { raw: wagoRaw } = useDeviceData(wagoId)
+
+  const driveConnected = socketConnected && Boolean(driveRaw['__connected'])
+  const wagoConnected = socketConnected && Boolean(wagoRaw['__connected'])
+
+  const driveLastOkTs = typeof driveRaw['__lastOkTs'] === 'string' ? driveRaw['__lastOkTs'] : null
+  const wagoLastOkTs = typeof wagoRaw['__lastOkTs'] === 'string' ? wagoRaw['__lastOkTs'] : null
+
+  const fmt = (ts: string | null) => {
+    if (!ts) return '--'
+    const d = new Date(ts)
+    return Number.isNaN(d.getTime()) ? '--' : d.toLocaleTimeString([], { hour12: false })
+  }
+
+  const commMode: 'ok' | 'partial' | 'off' =
+    driveConnected && wagoConnected ? 'ok' : !driveConnected && !wagoConnected ? 'off' : 'partial'
 
   const toNumber = (val: unknown): number => {
     const n = Number(val)
@@ -61,21 +84,69 @@ const Header = () => {
     <HeaderContainer>
       <LeftSection>
         <Badge>
-          <BadgeLabel>Test Stand</BadgeLabel>
-          <BadgeValue>TEST STAND A</BadgeValue>
+          <BadgeLabel>Drive Model</BadgeLabel>
+          <BadgeValue>MV3000e</BadgeValue>
         </Badge>
-        <Divider />
+        {/* <Divider />
         <InfoText>
           <span>PROJECT: RTE-002</span>
           <span className="separator">|</span>
           <span>IP: 192.168.10.24</span>
-        </InfoText>
+        </InfoText> */}
       </LeftSection>
 
       <RightSection>
+        <CommGroup>
+          {/* Ambos OK: un solo pill, sin last ok */}
+          {commMode === 'ok' && (
+            <CommPill $tone="ok">
+              <CommDot $tone="ok" />
+              <CommText>
+                <CommValue>DRIVE · WAGO</CommValue>
+              </CommText>
+            </CommPill>
+          )}
+
+          {/* Ambos OFF: un solo pill, ambos muestran last ok */}
+          {commMode === 'off' && (
+            <CommPill $tone="off">
+              <CommDot $tone="off" />
+              <CommText>
+                <CommValue>DRIVE · WAGO</CommValue>
+                <CommSub>
+                  Drive {fmt(driveLastOkTs)} · WAGO {fmt(wagoLastOkTs)}
+                </CommSub>
+              </CommText>
+            </CommPill>
+          )}
+
+          {/* Uno OK y otro OFF: separar, solo el OFF muestra last ok */}
+          {commMode === 'partial' && (
+            <>
+              <CommPill $tone={driveConnected ? 'ok' : 'off'}>
+                <CommDot $tone={driveConnected ? 'ok' : 'off'} />
+                <CommText>
+                  <CommTitle>DRIVE</CommTitle>
+                  <CommValue>{driveConnected ? 'OK' : 'OFF'}</CommValue>
+                  {!driveConnected && <CommSub>LAST {fmt(driveLastOkTs)}</CommSub>}
+                </CommText>
+              </CommPill>
+
+              <CommPill $tone={wagoConnected ? 'ok' : 'off'}>
+                <CommDot $tone={wagoConnected ? 'ok' : 'off'} />
+                <CommText>
+                  <CommTitle>WAGO</CommTitle>
+                  <CommValue>{wagoConnected ? 'OK' : 'OFF'}</CommValue>
+                  {!wagoConnected && <CommSub>LAST {fmt(wagoLastOkTs)}</CommSub>}
+                </CommText>
+              </CommPill>
+            </>
+          )}
+        </CommGroup>
+
         <AlarmButton $tone={tone} onClick={() => navigate('/alarms')} aria-label="Open alarms">
           <AlarmIconWrap $tone={tone}>
-            <BellRing size={22} />
+            <BellRing size={20} />
           </AlarmIconWrap>
           <AlarmInfo>
             <AlarmCounts>
@@ -86,9 +157,13 @@ const Header = () => {
         </AlarmButton>
 
         <TimeBlock>
-        <Time>{currentTime.toLocaleTimeString([], { hour12: false })}</Time>
-        <DateText>{currentTime.toLocaleDateString()}</DateText>
+          <Time>{currentTime.toLocaleTimeString([], { hour12: false })}</Time>
+          <DateText>{currentTime.toLocaleDateString()}</DateText>
         </TimeBlock>
+
+        <ConfigButton onClick={() => navigate('/config')} aria-label="Settings">
+          <Settings size={24} />
+        </ConfigButton>
       </RightSection>
     </HeaderContainer>
   )

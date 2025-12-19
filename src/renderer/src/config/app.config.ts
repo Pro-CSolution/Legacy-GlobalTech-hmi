@@ -17,3 +17,7 @@ export const SOCKET_CONFIG = {
     reconnectionDelay: 1000
   }
 } as const
+
+export const SYSTEM_ACTIONS_CONFIG = {
+  TOKEN: import.meta.env.VITE_SYSTEM_ACTIONS_TOKEN
+} as const

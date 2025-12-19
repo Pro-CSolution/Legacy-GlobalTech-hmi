@@ -34,6 +34,23 @@ export const Header = styled.div`
   padding-bottom: 8px;
   border-bottom: 1px solid ${({ theme }) => theme.colors.borders.primary}80;
   gap: 8px;
+  justify-content: space-between;
+`
+
+export const HeaderLeft = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+`
+
+export const HeaderRight = styled.div`
+  font-size: ${({ theme }) => theme.typography.sizes.sm};
+  color: ${({ theme }) => theme.colors.text.secondary};
+  letter-spacing: 0.02em;
+  user-select: none;
+  white-space: nowrap;
+  opacity: 0.9;
 `
 
 export const Title = styled.h3<{ color?: string }>`

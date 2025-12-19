@@ -40,9 +40,7 @@ const TempScreen = () => {
     { label: 'DE Bearing', value: values.motorDe }
   ]
 
-  const coolantData = [
-    { label: 'Internal', value: values.vfdCoolant, startH: 140, startHH: 160, endLL: 30, endL: 40 }
-  ]
+  const coolantData = [{ label: 'Internal', value: values.vfdCoolant }]
 
   return (
     <ScreenLayout>
@@ -56,8 +54,8 @@ const TempScreen = () => {
           data={windingData}
           columns={3}
           width={1000}
-          height={720}
-          position={{ top: 120, left: 50 }}
+          height={740}
+          position={{ top: 100, left: 50 }}
         />
 
         {/* Motor Bearings Panel */}
@@ -65,10 +63,10 @@ const TempScreen = () => {
           title="Motor Bearings"
           icon={Activity}
           data={bearingData}
-          columns={2}
-          width={700}
-          height={320}
-          position={{ top: 120, left: 1080 }}
+          columns={1}
+          width={350}
+          height={740}
+          position={{ top: 100, left: 1080 }}
         />
 
         {/* VFD Coolant Panel */}
@@ -78,8 +76,8 @@ const TempScreen = () => {
           data={coolantData}
           columns={1}
           width={400} // Reduced width since it's single item
-          height={320}
-          position={{ top: 460, left: 1080 }}
+          height={400}
+          position={{ top: 100, left: 1460 }}
         />
       </MainContainer>
     </ScreenLayout>

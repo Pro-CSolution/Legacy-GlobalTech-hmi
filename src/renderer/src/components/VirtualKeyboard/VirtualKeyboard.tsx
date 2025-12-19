@@ -15,7 +15,7 @@ import {
   AlphaRow
 } from './VirtualKeyboard.styles'
 
-type KeyboardMode = 'numeric' | 'alpha'
+export type KeyboardMode = 'numeric' | 'alpha' | 'text'
 
 export interface VirtualKeyboardProps {
   visible: boolean

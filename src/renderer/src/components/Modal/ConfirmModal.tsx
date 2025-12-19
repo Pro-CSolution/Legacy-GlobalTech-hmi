@@ -68,10 +68,10 @@ const Button = styled.button<{ $primary?: boolean; $danger?: boolean }>`
 
 export const ConfirmModal = ({
   isOpen,
-  title = 'Confirmación',
-  message = '¿Estás seguro?',
-  confirmLabel = 'Confirmar',
-  cancelLabel = 'Cancelar',
+  title = 'Confirmation',
+  message = 'Are you sure?',
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
   tone = 'default'

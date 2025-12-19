@@ -1,4 +1,3 @@
-import React from 'react'
 import styled from 'styled-components'
 import Card from 'components/Card'
 import StatusBadge from 'components/StatusBadge'
@@ -16,7 +15,7 @@ const StatusRow = styled.div`
   padding: 8px;
   background: ${({ theme }) => theme.colors.background.tertiary};
   border-radius: ${({ theme }) => theme.borderRadius.sm};
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -27,22 +26,16 @@ const Label = styled.span`
   font-weight: 500;
 `
 
-export const SystemStatusPanel: React.FC<SystemStatusProps> = ({ systemFault, flowLow }) => {
+export const SystemStatusPanel = ({ systemFault, flowLow }: SystemStatusProps) => {
   return (
     <Card title="System Status">
       <StatusRow>
         <Label>Coolant System</Label>
-        <StatusBadge 
-          status={systemFault ? 'alarm' : 'ok'} 
-          label={systemFault ? 'FAULT' : 'OK'} 
-        />
+        <StatusBadge status={systemFault ? 'alarm' : 'ok'} label={systemFault ? 'FAULT' : 'OK'} />
       </StatusRow>
       <StatusRow>
         <Label>Coolant Flow</Label>
-        <StatusBadge 
-          status={flowLow ? 'warning' : 'ok'} 
-          label={flowLow ? 'LOW' : 'NORMAL'} 
-        />
+        <StatusBadge status={flowLow ? 'warning' : 'ok'} label={flowLow ? 'LOW' : 'NORMAL'} />
       </StatusRow>
     </Card>
   )

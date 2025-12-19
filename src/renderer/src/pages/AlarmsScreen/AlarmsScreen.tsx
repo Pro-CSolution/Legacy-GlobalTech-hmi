@@ -7,17 +7,15 @@ import {
   ChevronUp,
   History,
   RefreshCcw,
-  Siren,
-  X
+  Siren
 } from 'lucide-react'
 import { useTheme } from 'styled-components'
 import { ScreenLayout } from 'layouts'
 import ActionButton from 'components/ActionButton'
 import Card from 'components/Card'
 import { FaultCodeDetailModal } from 'components/FaultCodeDetailModal'
-import { PdfViewer } from 'components/PdfViewer'
+import { ManualModal } from 'components/ManualModal'
 import Panel from 'components/Panel'
-import { ModalBase } from 'components/Modal'
 import { useDeviceData, useSendCommand } from 'hooks'
 import type { FaultCodeEntry } from 'services'
 import { getFaultCodesById } from 'services'
@@ -435,24 +433,12 @@ const AlarmsScreen = () => {
           onClose={() => setSelectedFaultCodeId(null)}
         />
 
-        <ModalBase
+        <ManualModal
           isOpen={isManualOpen}
-          onRequestClose={() => setIsManualOpen(false)}
-          width={1240}
-          ariaLabel="Alarms manual"
-        >
-          <S.ManualModalBody>
-            <S.ManualModalHeader>
-              <S.ManualModalTitle>Alarms Manual</S.ManualModalTitle>
-              <S.ManualModalClose onClick={() => setIsManualOpen(false)} aria-label="Close manual">
-                <X size={22} />
-              </S.ManualModalClose>
-            </S.ManualModalHeader>
-            <S.ManualModalContent>
-              {isManualOpen && <PdfViewer fileUrl={alarmsManualPdfUrl} initialPage={1} />}
-            </S.ManualModalContent>
-          </S.ManualModalBody>
-        </ModalBase>
+          onClose={() => setIsManualOpen(false)}
+          fileUrl={alarmsManualPdfUrl}
+          title="Alarms Manual"
+        />
       </S.MainContainer>
     </ScreenLayout>
   )

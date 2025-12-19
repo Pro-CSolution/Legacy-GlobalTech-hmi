@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
 import { X, Search, Plus, Trash2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -445,6 +445,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   const [search, setSearch] = useState('')
   const [searchResults, setSearchResults] = useState<DriveParameter[]>([])
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
   const [keyboardTarget, setKeyboardTarget] = useState<KeyboardTarget>(null)
   const [keyboardMode, setKeyboardMode] = useState<'alpha' | 'numeric'>('alpha')
@@ -467,7 +468,8 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       setName(initialProfile.name)
       setColor(initialProfile.color)
       setIcon(initialProfile.icon)
-      setParams([...initialProfile.parameters])
+      // Clonamos objetos para evitar mutaciones accidentales del estado padre (y efectos raros al guardar).
+      setParams(initialProfile.parameters.map((p) => ({ ...p })))
 
       // Fetch metadata for existing parameters
       const fetchMetadata = async () => {
@@ -553,9 +555,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   }
 
   const updateParamValue = (index: number, val: string | number) => {
-    const newParams = [...params]
-    newParams[index].value = val
-    setParams(newParams)
+    setParams((prev) => prev.map((p, i) => (i === index ? { ...p, value: val } : p)))
   }
 
   const removeParam = (index: number) => {
@@ -564,6 +564,9 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
   const handleSave = async () => {
     if (!name) return
+    // Guard extra: evita doble submit (click/touch duplicado) y requests concurrentes con payloads distintos.
+    if (savingRef.current) return
+    savingRef.current = true
     setSaving(true)
     try {
       await onSave({
@@ -578,6 +581,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       alert('Failed to save profile')
     } finally {
       setSaving(false)
+      savingRef.current = false
     }
   }
 
@@ -706,7 +710,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   meta.id || p.parameter_id || (p as unknown as { id?: string }).id || '—'
 
                 return (
-                  <ParamRow key={`${p.device_id}-${p.parameter_id}`}>
+                  <ParamRow key={p.id ?? `${p.device_id}-${p.parameter_id}-${idx}`}>
                     <ValueContainer
                       onClick={
                         !isEnum
@@ -752,7 +756,13 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                         {meta.range_text && <RangeLabel>Range: {meta.range_text}</RangeLabel>}
                       </div>
 
-                      <DeleteButton onClick={() => removeParam(idx)} title="Remove parameter">
+                      <DeleteButton
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeParam(idx)
+                        }}
+                        title="Remove parameter"
+                      >
                         <Trash2 size={22} />
                       </DeleteButton>
                     </ValueContainer>

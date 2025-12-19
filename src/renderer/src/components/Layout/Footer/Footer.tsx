@@ -1,13 +1,4 @@
-import {
-  LayoutDashboard,
-  Thermometer,
-  Bell,
-  LineChart,
-  Menu,
-  List,
-  Layers,
-  Droplets
-} from 'lucide-react'
+import { LayoutDashboard, Thermometer, Bell, LineChart, List, Layers, Droplets } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router'
 import { FooterContainer, NavButton, Label } from './Footer.styles'
 
@@ -61,11 +52,6 @@ const Footer = () => {
       >
         <Layers size={iconsSize} />
         <Label>PROFILES</Label>
-      </NavButton>
-
-      {/* Config/Menu */}
-      <NavButton style={{ marginLeft: 'auto', background: '#0f172a' }}>
-        <Menu size={iconsSize} />
       </NavButton>
     </FooterContainer>
   )

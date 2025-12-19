@@ -12,6 +12,22 @@ type UseTrendDataOptions = {
 
 type TrendDataset = Dataset & { parameterId: ParameterId }
 
+const TREND_COLORS = ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e'] as const
+
+const HISTORY_RETRY = {
+  INITIAL_DELAY_MS: 800,
+  MAX_DELAY_MS: 7_000,
+  JITTER_RATIO: 0.2
+} as const
+
+const computeRetryDelayMs = (attempt: number): number => {
+  const safeAttempt = Math.max(1, Math.floor(attempt))
+  const base = HISTORY_RETRY.INITIAL_DELAY_MS * 2 ** (safeAttempt - 1)
+  const capped = Math.min(HISTORY_RETRY.MAX_DELAY_MS, base)
+  const jitter = capped * HISTORY_RETRY.JITTER_RATIO * (Math.random() * 2 - 1)
+  return Math.max(250, Math.floor(capped + jitter))
+}
+
 const toSeconds = (iso: string | number): number =>
   typeof iso === 'number' ? iso : new Date(iso).getTime() / 1000
 
@@ -70,211 +86,322 @@ export const useTrendData = (
   const debugGate = useMemo(() => createKeyedThrottle(1500), [])
   const loadSeqRef = useRef(0)
   const lastRealtimeTsRef = useRef<number | null>(null)
+  const prevDeviceIdRef = useRef<DeviceId | null>(null)
+  const retryAttemptRef = useRef(0)
+  const retryTimerRef = useRef<number | null>(null)
 
-  const loadHistory = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const seq = ++loadSeqRef.current
-      const nowSeconds = Date.now() / 1000
-      const windowSec = timeWindowSeconds
-      const cutoffForNow = nowSeconds - windowSec
+  const clearRetryTimer = useCallback(() => {
+    if (retryTimerRef.current !== null) {
+      window.clearTimeout(retryTimerRef.current)
+      retryTimerRef.current = null
+    }
+  }, [])
 
-      // El backend limita por parámetro y devuelve *los más recientes primero*.
-      // Si la señal es de alta frecuencia, 2000 puntos pueden NO cubrir la ventana completa.
-      // Por eso: reintentamos con un límite mayor si detectamos truncamiento.
-      const MAX_REQUEST_LIMIT = 100_000
-      const MAX_ATTEMPTS = 5
+  // Cleanup on unmount
+  useEffect(() => clearRetryTimer, [clearRetryTimer])
 
-      let requestLimit = Math.max(1, limitPerParam)
-      let response: Awaited<ReturnType<typeof fetchTrendHistory>> | null = null
+  // Inicializa datasets "vacíos" por parámetro para que el realtime pueda poblar incluso si falla el historial.
+  useEffect(() => {
+    if (!parameterIds.length) {
+      clearRetryTimer()
+      retryAttemptRef.current = 0
+      setDatasets([])
+      setXDomain(null)
+      setError(null)
+      setIsLoading(false)
+      lastRealtimeTsRef.current = null
+      prevDeviceIdRef.current = deviceId
+      return
+    }
 
-      if (debugGate('trend.data.history.start')) {
-        debugLog('trend.data', 'loadHistory start', {
-          deviceId,
-          windowMinutes,
-          timeWindowSeconds,
-          limitPerParam,
-          parameterIds,
-          nowSeconds,
-          cutoffForNow
-        })
-      }
+    const deviceChanged = prevDeviceIdRef.current !== deviceId
+    prevDeviceIdRef.current = deviceId
 
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        response = await fetchTrendHistory({
-          deviceId,
-          parameterIds,
-          windowMinutes,
-          limitPerParam: requestLimit
-        })
-
-        if (seq !== loadSeqRef.current) return
-
-        const perSeries: Array<Record<string, unknown>> = []
-        let hitLimit = false
-        let anyTruncatedStart = false
-        let observedMaxX = Number.NEGATIVE_INFINITY
-        for (const pid of parameterIds) {
-          const series = response.series?.[pid] || []
-          const hit = series.length >= requestLimit
-          if (hit) hitLimit = true
-
-          let minX = Number.POSITIVE_INFINITY
-          let maxX = Number.NEGATIVE_INFINITY
-          let countValid = 0
-          for (const p of series) {
-            const x = toSeconds(p.time)
-            if (!Number.isFinite(x)) continue
-            countValid += 1
-            minX = Math.min(minX, x)
-            maxX = Math.max(maxX, x)
-          }
-
-          const hasBounds = Number.isFinite(minX) && Number.isFinite(maxX)
-          if (hasBounds) observedMaxX = Math.max(observedMaxX, maxX)
-
-          perSeries.push({
-            parameterId: pid,
-            requestLimit,
-            count: series.length,
-            countValid,
-            hitLimit: hit,
-            minX: hasBounds ? minX : null,
-            maxX: hasBounds ? maxX : null
-          })
-        }
-
-        const anchorCandidate = Math.max(
-          nowSeconds,
-          Number.isFinite(observedMaxX) ? observedMaxX : nowSeconds
-        )
-        const cutoffCandidate = anchorCandidate - windowSec
-
-        perSeries.forEach((entry) => {
-          const minX = entry.minX as number | null
-          const hit = entry.hitLimit as boolean
-          const truncatedStart =
-            hit && typeof minX === 'number' ? minX > cutoffCandidate + 1 : false
-          entry.truncatedStart = truncatedStart
-          if (truncatedStart) anyTruncatedStart = true
-        })
-
-        if (debugGate('trend.data.history.attempt')) {
-          debugLog('trend.data', 'loadHistory attempt', {
-            attempt,
-            requestLimit,
-            hitLimit,
-            anchorCandidate,
-            cutoffCandidate,
-            anyTruncatedStart,
-            windowSec,
-            perSeries
-          })
-        }
-
-        // Si no estamos golpeando el límite, no hay más datos que pedir.
-        if (!hitLimit) break
-        // Si no falta el inicio de la ventana, aumentar el límite no va a ayudar.
-        if (!anyTruncatedStart) break
-        // Si llegamos al tope, no podemos pedir más sin arriesgar performance.
-        if (requestLimit >= MAX_REQUEST_LIMIT) break
-
-        requestLimit = Math.min(MAX_REQUEST_LIMIT, requestLimit * 2)
-      }
-
-      if (!response) {
-        throw new Error('No se pudo obtener historial de tendencia (respuesta vacía)')
-      }
-
-      console.debug('[useTrendData] history response', {
-        deviceId,
-        parameterIds,
-        seriesKeys: Object.keys(response.series || {}),
-        firstSeriesSample: response.series?.[parameterIds[0]]?.[0]
-      })
-
-      // Ancla de tiempo consistente: usamos el mayor entre "ahora" (cliente) y el último timestamp observado en el historial.
-      // Esto evita saltos fuertes si hay drift de reloj entre backend/cliente, y también evita que el 1er update realtime recorte de golpe.
-      let maxTsFromResponse = Number.NEGATIVE_INFINITY
-      for (const pid of parameterIds) {
-        const series = response.series?.[pid] || []
-        for (const p of series) {
-          const x = toSeconds(p.time)
-          if (!Number.isFinite(x)) continue
-          maxTsFromResponse = Math.max(maxTsFromResponse, x)
-        }
-      }
-
-      const observedMax = Number.isFinite(maxTsFromResponse) ? maxTsFromResponse : nowSeconds
-      const anchorMax = Math.max(nowSeconds, observedMax)
-      const cutoff = anchorMax - windowSec
-
-      const nextDatasets: TrendDataset[] = parameterIds.map((pid, idx) => {
-        const series = response.series?.[pid] || []
-        const mapped = filterValidPoints(
-          series.map((point) => ({
-            x: toSeconds(point.time),
-            y: Number(point.value)
-          }))
-        ).filter((p) => p.x >= cutoff && p.x <= anchorMax)
-
-        return {
+    setDatasets((prev) => {
+      if (deviceChanged) {
+        return parameterIds.map((pid, idx) => ({
           parameterId: pid,
-          label: parameterKeys[idx] ?? pid,
-          // Sin recorte por cantidad: solo por tiempo (uPlot es eficiente).
-          data: mapped,
-          borderColor: ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e'][idx % 4],
+          label: (parameterKeys[idx] ?? pid) as string,
+          data: [],
+          borderColor: TREND_COLORS[idx % TREND_COLORS.length],
           backgroundColor: 'transparent',
           tension: 0.4,
           pointRadius: 0,
           borderWidth: 2
+        }))
+      }
+
+      const prevIds = prev.map((d) => d.parameterId)
+      const sameIds =
+        prevIds.length === parameterIds.length && prevIds.every((id, i) => id === parameterIds[i])
+
+      if (sameIds) {
+        // Mantiene data existente, pero refresca labels si cambian los keys/aliases.
+        return prev.map((ds, idx) => ({
+          ...ds,
+          label: (parameterKeys[idx] ?? ds.parameterId) as string
+        }))
+      }
+
+      return parameterIds.map((pid, idx) => ({
+        parameterId: pid,
+        label: (parameterKeys[idx] ?? pid) as string,
+        data: [],
+        borderColor: TREND_COLORS[idx % TREND_COLORS.length],
+        backgroundColor: 'transparent',
+        tension: 0.4,
+        pointRadius: 0,
+        borderWidth: 2
+      }))
+    })
+
+    // Si todavía no hay dominio, dejamos uno inicial para que el gráfico tenga un rango mientras llega el historial.
+    setXDomain((prev) => {
+      if (prev) return prev
+      const now = Date.now() / 1000
+      return { min: now - timeWindowSeconds, max: now }
+    })
+
+    lastRealtimeTsRef.current = null
+  }, [deviceId, parameterIds, parameterKeys, timeWindowSeconds, clearRetryTimer])
+
+  const loadHistory = useCallback(
+    async ({ resetRetry = true }: { resetRetry?: boolean } = {}) => {
+      if (!parameterIds.length) return
+
+      if (resetRetry) {
+        retryAttemptRef.current = 0
+        clearRetryTimer()
+        setError(null)
+      }
+
+      setIsLoading(true)
+      const seq = ++loadSeqRef.current
+      try {
+        const nowSeconds = Date.now() / 1000
+        const windowSec = timeWindowSeconds
+        const cutoffForNow = nowSeconds - windowSec
+
+        // El backend limita por parámetro y devuelve *los más recientes primero*.
+        // Si la señal es de alta frecuencia, 2000 puntos pueden NO cubrir la ventana completa.
+        // Por eso: reintentamos con un límite mayor si detectamos truncamiento.
+        const MAX_REQUEST_LIMIT = 100_000
+        const MAX_ATTEMPTS = 5
+
+        let requestLimit = Math.max(1, limitPerParam)
+        let response: Awaited<ReturnType<typeof fetchTrendHistory>> | null = null
+
+        if (debugGate('trend.data.history.start')) {
+          debugLog('trend.data', 'loadHistory start', {
+            deviceId,
+            windowMinutes,
+            timeWindowSeconds,
+            limitPerParam,
+            parameterIds,
+            nowSeconds,
+            cutoffForNow
+          })
         }
-      })
 
-      setDatasets(nextDatasets)
-      setXDomain({ min: cutoff, max: anchorMax })
-      lastRealtimeTsRef.current = anchorMax
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          response = await fetchTrendHistory({
+            deviceId,
+            parameterIds,
+            windowMinutes,
+            limitPerParam: requestLimit
+          })
 
-      if (debugGate('trend.data.history.done')) {
-        const stats = nextDatasets.map((ds) => {
+          if (seq !== loadSeqRef.current) return
+
+          const perSeries: Array<Record<string, unknown>> = []
+          let hitLimit = false
+          let anyTruncatedStart = false
+          let observedMaxX = Number.NEGATIVE_INFINITY
+          for (const pid of parameterIds) {
+            const series = response.series?.[pid] || []
+            const hit = series.length >= requestLimit
+            if (hit) hitLimit = true
+
+            let minX = Number.POSITIVE_INFINITY
+            let maxX = Number.NEGATIVE_INFINITY
+            let countValid = 0
+            for (const p of series) {
+              const x = toSeconds(p.time)
+              if (!Number.isFinite(x)) continue
+              countValid += 1
+              minX = Math.min(minX, x)
+              maxX = Math.max(maxX, x)
+            }
+
+            const hasBounds = Number.isFinite(minX) && Number.isFinite(maxX)
+            if (hasBounds) observedMaxX = Math.max(observedMaxX, maxX)
+
+            perSeries.push({
+              parameterId: pid,
+              requestLimit,
+              count: series.length,
+              countValid,
+              hitLimit: hit,
+              minX: hasBounds ? minX : null,
+              maxX: hasBounds ? maxX : null
+            })
+          }
+
+          const anchorCandidate = Math.max(
+            nowSeconds,
+            Number.isFinite(observedMaxX) ? observedMaxX : nowSeconds
+          )
+          const cutoffCandidate = anchorCandidate - windowSec
+
+          perSeries.forEach((entry) => {
+            const minX = entry.minX as number | null
+            const hit = entry.hitLimit as boolean
+            const truncatedStart =
+              hit && typeof minX === 'number' ? minX > cutoffCandidate + 1 : false
+            entry.truncatedStart = truncatedStart
+            if (truncatedStart) anyTruncatedStart = true
+          })
+
+          if (debugGate('trend.data.history.attempt')) {
+            debugLog('trend.data', 'loadHistory attempt', {
+              attempt,
+              requestLimit,
+              hitLimit,
+              anchorCandidate,
+              cutoffCandidate,
+              anyTruncatedStart,
+              windowSec,
+              perSeries
+            })
+          }
+
+          // Si no estamos golpeando el límite, no hay más datos que pedir.
+          if (!hitLimit) break
+          // Si no falta el inicio de la ventana, aumentar el límite no va a ayudar.
+          if (!anyTruncatedStart) break
+          // Si llegamos al tope, no podemos pedir más sin arriesgar performance.
+          if (requestLimit >= MAX_REQUEST_LIMIT) break
+
+          requestLimit = Math.min(MAX_REQUEST_LIMIT, requestLimit * 2)
+        }
+
+        if (!response) {
+          throw new Error('No se pudo obtener historial de tendencia (respuesta vacía)')
+        }
+
+        console.debug('[useTrendData] history response', {
+          deviceId,
+          parameterIds,
+          seriesKeys: Object.keys(response.series || {}),
+          firstSeriesSample: response.series?.[parameterIds[0]]?.[0]
+        })
+
+        // Ancla de tiempo consistente: usamos el mayor entre "ahora" (cliente) y el último timestamp observado en el historial.
+        // Esto evita saltos fuertes si hay drift de reloj entre backend/cliente, y también evita que el 1er update realtime recorte de golpe.
+        let maxTsFromResponse = Number.NEGATIVE_INFINITY
+        for (const pid of parameterIds) {
+          const series = response.series?.[pid] || []
+          for (const p of series) {
+            const x = toSeconds(p.time)
+            if (!Number.isFinite(x)) continue
+            maxTsFromResponse = Math.max(maxTsFromResponse, x)
+          }
+        }
+
+        const observedMax = Number.isFinite(maxTsFromResponse) ? maxTsFromResponse : nowSeconds
+        const anchorMax = Math.max(nowSeconds, observedMax)
+        const cutoff = anchorMax - windowSec
+
+        const nextDatasets: TrendDataset[] = parameterIds.map((pid, idx) => {
+          const series = response.series?.[pid] || []
+          const mapped = filterValidPoints(
+            series.map((point) => ({
+              x: toSeconds(point.time),
+              y: Number(point.value)
+            }))
+          ).filter((p) => p.x >= cutoff && p.x <= anchorMax)
+
           return {
-            parameterId: ds.parameterId,
-            count: ds.data.length,
-            ...computeSpan(ds.data)
+            parameterId: pid,
+            label: parameterKeys[idx] ?? pid,
+            // Sin recorte por cantidad: solo por tiempo (uPlot es eficiente).
+            data: mapped,
+            borderColor: ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e'][idx % 4],
+            backgroundColor: 'transparent',
+            tension: 0.4,
+            pointRadius: 0,
+            borderWidth: 2
           }
         })
 
-        debugLog('trend.data', 'loadHistory done', {
-          xDomain: { min: cutoff, max: anchorMax },
-          nowSeconds,
-          observedMax,
-          maxTsFromResponse: Number.isFinite(maxTsFromResponse) ? maxTsFromResponse : null,
-          anchorMax,
-          driftSec: nowSeconds - anchorMax,
-          windowSec,
-          stats
-        })
+        setDatasets(nextDatasets)
+        setXDomain({ min: cutoff, max: anchorMax })
+        lastRealtimeTsRef.current = anchorMax
+        // Éxito: limpiar estado de retry
+        retryAttemptRef.current = 0
+        clearRetryTimer()
+        setError(null)
+
+        if (debugGate('trend.data.history.done')) {
+          const stats = nextDatasets.map((ds) => {
+            return {
+              parameterId: ds.parameterId,
+              count: ds.data.length,
+              ...computeSpan(ds.data)
+            }
+          })
+
+          debugLog('trend.data', 'loadHistory done', {
+            xDomain: { min: cutoff, max: anchorMax },
+            nowSeconds,
+            observedMax,
+            maxTsFromResponse: Number.isFinite(maxTsFromResponse) ? maxTsFromResponse : null,
+            anchorMax,
+            driftSec: nowSeconds - anchorMax,
+            windowSec,
+            stats
+          })
+        }
+      } catch (err) {
+        console.error('Failed to load trend history', err)
+        if (seq !== loadSeqRef.current) return
+
+        setError('No se pudo cargar el historial')
+
+        // Reintentos automáticos estilo "reconexión" para evitar quedar en error hasta refrescar/navegar.
+        const attempt = retryAttemptRef.current + 1
+        retryAttemptRef.current = attempt
+
+        // Evita múltiples timers paralelos.
+        if (retryTimerRef.current === null) {
+          const delayMs = computeRetryDelayMs(attempt)
+          retryTimerRef.current = window.setTimeout(() => {
+            retryTimerRef.current = null
+            if (seq !== loadSeqRef.current) return
+            void loadHistory({ resetRetry: false })
+          }, delayMs)
+        }
+      } finally {
+        if (seq === loadSeqRef.current) {
+          setIsLoading(false)
+        }
       }
-    } catch (err) {
-      console.error('Failed to load trend history', err)
-      setError('No se pudo cargar el historial')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [
-    deviceId,
-    parameterIds,
-    parameterKeys,
-    windowMinutes,
-    limitPerParam,
-    timeWindowSeconds,
-    debugGate
-  ])
+    },
+    [
+      deviceId,
+      parameterIds,
+      parameterKeys,
+      windowMinutes,
+      limitPerParam,
+      timeWindowSeconds,
+      debugGate,
+      clearRetryTimer
+    ]
+  )
 
   useEffect(() => {
     if (!parameterIds.length) return
-    void loadHistory()
+    void loadHistory({ resetRetry: true })
   }, [loadHistory, parameterIds.length])
 
   useEffect(() => {
@@ -387,5 +514,9 @@ export const useTrendData = (
     [datasets, parameterIds, parameterKeys]
   )
 
-  return { datasets, isLoading, error, reload: loadHistory, xDomain, getDataset }
+  const reload = useCallback(async (): Promise<void> => {
+    await loadHistory({ resetRetry: true })
+  }, [loadHistory])
+
+  return { datasets, isLoading, error, reload, xDomain, getDataset }
 }

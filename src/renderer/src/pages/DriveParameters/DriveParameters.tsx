@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScreenLayout } from 'layouts'
 import { useRealtime } from 'hooks/useRealtime'
 import { useOnDemandParameters } from 'hooks/useOnDemandParameters'
@@ -50,7 +50,7 @@ const formatValue = (value: unknown) => {
   return String(value)
 }
 
-const DriveParameters: React.FC = () => {
+const DriveParameters = () => {
   const [menus, setMenus] = useState<DriveMenu[]>([])
   const [selectedMenu, setSelectedMenu] = useState<number | null>(1)
   const [search, setSearch] = useState('')

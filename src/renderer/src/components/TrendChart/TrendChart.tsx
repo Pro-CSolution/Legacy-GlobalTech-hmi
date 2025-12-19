@@ -318,14 +318,16 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
     useEffect(() => {
       if (!demoData && externalDatasets) {
         if (externalDatasets.length === 0) {
-          setError('No datasets provided')
+          // En un HMI esto no es un "error" del gráfico: simplemente no hay datos aún.
+          setError(null)
           setIsLoading(false)
           return
         }
 
         const hasValidData = externalDatasets.some((ds) => ds.data && ds.data.length > 0)
         if (!hasValidData) {
-          setError('No valid data in datasets')
+          // Dataset existe pero aún no llegaron puntos (historial/realtime).
+          setError(null)
           setIsLoading(false)
           return
         }
@@ -883,8 +885,10 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       )
     }
 
+    const hasPoints = uplotData.xValues.length > 0
+
     // Render no data state
-    if (activeDatasets.length === 0 || uplotData.data.length === 0) {
+    if (activeDatasets.length === 0 || !hasPoints) {
       return (
         <Container
           variant={variant}
@@ -901,7 +905,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
               <TitleText variant={variant}>{title}</TitleText>
             </TitleBar>
           )}
-          <NoDataContainer>No data available</NoDataContainer>
+          <NoDataContainer>Sin datos disponibles</NoDataContainer>
         </Container>
       )
     }
