@@ -10,6 +10,7 @@ export interface StatusBadgeProps extends PositionProps {
   onLabel?: string
   offLabel?: string
   faultLabel?: string
+  warnLabel?: string
   type?: 'standard' | 'warning'
 }
 
@@ -19,6 +20,7 @@ const StatusBadge = ({
   onLabel = 'ON',
   offLabel = 'OFF',
   faultLabel = 'FALLA',
+  warnLabel = 'WARNING',
   ...positionProps
 }: StatusBadgeProps) => {
   let Icon: LucideIcon = Power
@@ -33,12 +35,12 @@ const StatusBadge = ({
     text = faultLabel
   } else if (['warning', 'warn'].includes(s)) {
     Icon = AlertTriangle
-    text = 'WARNING'
+    text = warnLabel
   }
 
   return (
     <Container {...positionProps}>
-      <Label>{label}</Label>
+      {label && <Label>{label}</Label>}
       <Badge status={status}>
         <StatusText>{text}</StatusText>
         <Icon size={20} />

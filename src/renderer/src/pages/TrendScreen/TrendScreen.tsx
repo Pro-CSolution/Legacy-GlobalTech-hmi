@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Profiler, useCallback, useEffect, useRef, useState } from 'react'
 import { TrendChart, TrendChartRef, Dataset } from 'components/TrendChart'
 import { ScreenLayout } from 'layouts'
 import { sendTrendReportEmail } from 'services'
-import type { TrendReportSeries } from 'services'
+import type { ClientMotorInfo, TrendReportSeries } from 'services'
+import { runReportSend } from 'hooks/useReportSendStatus'
 import { useTheme } from 'styled-components'
-import { debugLog } from 'utils/debug'
+import { getErrorMessage, isAxiosErrorLike } from 'types/errors'
+import { debugLog, isDebugEnabled } from 'utils/debug'
 import { LegendBox } from './components/LegendBox'
 import { ManualPanel } from './components/ManualPanel'
 import { ReportPanel } from './components/ReportPanel'
@@ -16,9 +18,93 @@ import * as S from './TrendScreen.styles'
 
 type ImageMimeType = 'image/png' | 'image/jpeg'
 
+const perfNow = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
 const stripDataUrlPrefix = (dataUrl: string): string => {
   const idx = dataUrl.indexOf(',')
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl
+}
+
+const CLIENT_MOTOR_INFO_STORAGE_KEY = 'client_motor_info'
+const CLIENT_MOTOR_MAX_EXTRAS = 15
+
+const createBlankClientMotorInfo = (): ClientMotorInfo => ({
+  customer: '',
+  model: '',
+  catalog: '',
+  hp: '',
+  rpm: '',
+  volts: '',
+  amps: '',
+  hz: '',
+  frame: '',
+  duty: '',
+  enclosure: '',
+  tempRise: '',
+  serviceFactor: '',
+  efficiency: '',
+  inverterRating: '',
+  extras: []
+})
+
+const loadClientMotorInfoForReport = (): ClientMotorInfo => {
+  const fallback = createBlankClientMotorInfo()
+  if (typeof window === 'undefined') return fallback
+
+  try {
+    const raw = localStorage.getItem(CLIENT_MOTOR_INFO_STORAGE_KEY)
+    if (!raw) return fallback
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return fallback
+    const obj = parsed as Record<string, unknown>
+
+    const readString = (key: string): string => {
+      const v = obj[key]
+      if (typeof v === 'string') return v
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+      return ''
+    }
+
+    const extrasRaw = obj.extras
+    const extras = Array.isArray(extrasRaw)
+      ? extrasRaw
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null
+            const row = item as Record<string, unknown>
+            const label = typeof row.label === 'string' ? row.label.trim() : ''
+            const value = typeof row.value === 'string' ? row.value.trim() : ''
+            if (!label) return null
+            return { label, value }
+          })
+          .filter((v): v is { label: string; value: string } => Boolean(v))
+          .slice(0, CLIENT_MOTOR_MAX_EXTRAS)
+      : []
+
+    return {
+      customer: readString('customer'),
+      model: readString('model'),
+      catalog: readString('catalog'),
+      hp: readString('hp'),
+      rpm: readString('rpm'),
+      volts: readString('volts'),
+      amps: readString('amps'),
+      hz: readString('hz'),
+      frame: readString('frame'),
+      duty: readString('duty'),
+      enclosure: readString('enclosure'),
+      tempRise: readString('tempRise'),
+      serviceFactor: readString('serviceFactor'),
+      efficiency: readString('efficiency'),
+      inverterRating: readString('inverterRating'),
+      extras
+    }
+  } catch {
+    return fallback
+  }
 }
 
 const sanitizeFilenamePart = (value: string): string =>
@@ -73,8 +159,42 @@ type HiddenExportRequest = {
   quality?: number
 }
 
+type SendReportResult = {
+  ok: boolean
+  message: string
+}
+
+const getFastApiErrorDetail = (error: unknown): string | null => {
+  if (!isAxiosErrorLike(error)) return null
+
+  const data = error.response?.data
+  if (!data) return null
+
+  if (typeof data === 'string') return data
+  if (typeof data !== 'object') return null
+
+  const detail = (data as Record<string, unknown>).detail
+  if (typeof detail === 'string') return detail
+
+  // FastAPI validation errors (422) are usually { detail: [{ msg, ... }, ...] }
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const msg = (item as Record<string, unknown>).msg
+        return typeof msg === 'string' ? msg : null
+      })
+      .filter((m): m is string => typeof m === 'string' && m.trim().length > 0)
+
+    if (msgs.length) return msgs.join(' · ')
+  }
+
+  return null
+}
+
 const TrendScreen = () => {
   void useTheme()
+  const perfEnabled = isDebugEnabled('trend.perf')
   const {
     timeRange,
     setTimeRange,
@@ -128,6 +248,8 @@ const TrendScreen = () => {
   const exportChartRef = useRef<TrendChartRef>(null)
   const [exportRequest, setExportRequest] = useState<HiddenExportRequest | null>(null)
   const exportResolveRef = useRef<((value: string | null) => void) | null>(null)
+  const renderStartRef = useRef<number>(perfNow())
+  renderStartRef.current = perfNow()
 
   useEffect(() => {
     debugLog('trend.screen', 'state snapshot', {
@@ -154,6 +276,27 @@ const TrendScreen = () => {
     combinedDatasets.length,
     combinedXDomain
   ])
+
+  useEffect(() => {
+    if (!perfEnabled) return
+
+    const totalPoints = combinedDatasets.reduce((acc, ds) => acc + (ds.data?.length ?? 0), 0)
+    const pointsPerSeries = combinedDatasets.map((ds) => ({
+      label: ds.label,
+      parameterId: (ds as unknown as { parameterId?: string }).parameterId ?? null,
+      isManual: Boolean((ds as unknown as { isManual?: boolean }).isManual),
+      points: ds.data?.length ?? 0
+    }))
+
+    debugLog('trend.perf', 'TrendScreen commit', {
+      ms: Math.round(perfNow() - renderStartRef.current),
+      selectedCount,
+      datasets: combinedDatasets.length,
+      totalPoints,
+      xDomain: combinedXDomain,
+      pointsPerSeries
+    })
+  }, [perfEnabled, selectedCount, combinedDatasets, combinedXDomain])
 
   useEffect(() => {
     if (!exportRequest) return
@@ -223,9 +366,9 @@ const TrendScreen = () => {
     []
   )
 
-  const handleSendReport = useCallback(async (): Promise<boolean> => {
-    if (!combinedXDomain) return false
-    if (!emailList.length) return false
+  const handleSendReport = useCallback(async (): Promise<SendReportResult> => {
+    if (!combinedXDomain) return { ok: false, message: 'No valid range for sending the report' }
+    if (!emailList.length) return { ok: false, message: 'Add at least one recipient' }
 
     const startSec = combinedXDomain.min
     const endSec = combinedXDomain.max
@@ -238,6 +381,8 @@ const TrendScreen = () => {
 
     setIsSending(true)
     try {
+      const clientMotorInfo = loadClientMotorInfoForReport()
+
       console.debug('[report.send] start', {
         recipients: emailList.length,
         range: { startSec, endSec, startIso, endIso },
@@ -276,8 +421,8 @@ const TrendScreen = () => {
         chartRef.current?.exportImage({ type: 'image/png' }) ??
         (await exportChartHidden({
           datasets: combinedDatasets,
-          width: 900,
-          height: 500,
+          width: 1500,
+          height: 600,
           xMin: startSec,
           xMax: endSec,
           type: 'image/png',
@@ -302,8 +447,8 @@ const TrendScreen = () => {
         const { yMin, yMax } = computePaddedYRange(ds, startSec, endSec)
         const dataUrl = await exportChartHidden({
           datasets: [ds],
-          width: 900,
-          height: 500,
+          width: 1500,
+          height: 600,
           xMin: startSec,
           xMax: endSec,
           yMin,
@@ -339,21 +484,33 @@ const TrendScreen = () => {
         imageNames: images.map((i) => i.filename)
       })
 
-      await sendTrendReportEmail({
-        recipients: emailList,
-        privateMode,
-        subject: reportSubject,
-        note: reportNote,
-        timeRange: { start: startIso, end: endIso },
-        series,
-        images
+      const response = await runReportSend('trend', async () => {
+        return await sendTrendReportEmail({
+          recipients: emailList,
+          privateMode,
+          subject: reportSubject,
+          note: reportNote,
+          timeRange: { start: startIso, end: endIso },
+          series,
+          images,
+          clientMotorInfo
+        })
       })
 
       console.debug('[report.send] sent ok')
-      return true
+      const recipientsCount = response?.recipients?.length ?? emailList.length
+      const attachmentsCount = response?.attachments
+      const message =
+        typeof attachmentsCount === 'number'
+          ? `Report sent (${recipientsCount} recipients, ${attachmentsCount} attachments)`
+          : `Report sent (${recipientsCount} recipients)`
+
+      return { ok: true, message }
     } catch (err) {
-      console.error('No se pudo enviar el reporte', err)
-      return false
+      console.error('Failed to send report', err)
+      const detail = getFastApiErrorDetail(err)
+      const message = detail ?? getErrorMessage(err, 'Could not send the report')
+      return { ok: false, message }
     } finally {
       setIsSending(false)
     }
@@ -365,7 +522,6 @@ const TrendScreen = () => {
     reportNote,
     reportSubject,
     exportChartHidden,
-    setIsReportOpen,
     setIsSending
   ])
 
@@ -387,36 +543,87 @@ const TrendScreen = () => {
 
         <S.ContentArea>
           <S.ChartSection $isShrunk={isReportOpen || isManualPanelOpen || isConfigOpen}>
-            <TrendChart
-              ref={chartRef}
-              datasets={combinedDatasets}
-              timeWindow={timeRange}
-              showLegend={false}
-              showTitle={false}
-              responsive={true}
-              maintainAspectRatio={false}
-              height={'97%'}
-              width={'98%'}
-              scales={{
-                x: {
-                  min: combinedXDomain?.min,
-                  max: combinedXDomain?.max,
-                  ticks: {
-                    callback: (val: unknown): string => {
-                      const date = new Date((val as number) * 1000)
-                      return date.toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit'
-                      })
+            {perfEnabled ? (
+              <Profiler
+                id="TrendChart"
+                onRender={(
+                  id,
+                  phase,
+                  actualDuration,
+                  baseDuration,
+                  startTime,
+                  commitTime
+                ) => {
+                  debugLog('trend.perf', 'React Profiler', {
+                    id,
+                    phase,
+                    actualMs: Math.round(actualDuration),
+                    baseMs: Math.round(baseDuration),
+                    startTime: Math.round(startTime),
+                    commitTime: Math.round(commitTime)
+                  })
+                }}
+              >
+                <TrendChart
+                  ref={chartRef}
+                  datasets={combinedDatasets}
+                  timeWindow={timeRange}
+                  showLegend={false}
+                  showTitle={false}
+                  responsive={true}
+                  maintainAspectRatio={false}
+                  height={'97%'}
+                  width={'98%'}
+                  scales={{
+                    x: {
+                      min: combinedXDomain?.min,
+                      max: combinedXDomain?.max,
+                      ticks: {
+                        callback: (val: unknown): string => {
+                          const date = new Date((val as number) * 1000)
+                          return date.toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit'
+                          })
+                        }
+                      }
+                    }
+                  }}
+                />
+              </Profiler>
+            ) : (
+              <TrendChart
+                ref={chartRef}
+                datasets={combinedDatasets}
+                timeWindow={timeRange}
+                showLegend={false}
+                showTitle={false}
+                responsive={true}
+                maintainAspectRatio={false}
+                height={'97%'}
+                width={'98%'}
+                scales={{
+                  x: {
+                    min: combinedXDomain?.min,
+                    max: combinedXDomain?.max,
+                    ticks: {
+                      callback: (val: unknown): string => {
+                        const date = new Date((val as number) * 1000)
+                        return date.toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit'
+                        })
+                      }
                     }
                   }
-                }
-              }}
-            />
+                }}
+              />
+            )}
             <LegendBox values={currentValues} />
 
-            {/* Exporter oculto (dentro del ThemeProvider real) */}
+            {/* Hidden exporter (inside the real ThemeProvider) */}
             {exportRequest && (
               <div
                 style={{
@@ -445,7 +652,8 @@ const TrendScreen = () => {
                       min: exportRequest.xMin,
                       max: exportRequest.xMax,
                       ticks: {
-                        callback: (val: number) => formatEpochSecondsToLocalTime(val)
+                        callback: (val: number) => formatEpochSecondsToLocalTime(val),
+                        space: 100
                       }
                     },
                     y: {

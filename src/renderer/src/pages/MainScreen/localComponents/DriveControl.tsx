@@ -58,6 +58,7 @@ export const DriveControl = ({
   ...positionProps
 }: DriveControlProps) => {
   const deviceId: DeviceId = 'drive_avid'
+  const wagoId: DeviceId = 'wago'
 
   const { writeParameter } = useSendCommand()
   const { devicesData, subscribeDevice, unsubscribeDevice } = useRealtime()
@@ -65,7 +66,8 @@ export const DriveControl = ({
   const [isQuickModalOpen, setIsQuickModalOpen] = useState(false)
   const [selectedParameter, setSelectedParameter] = useState<DriveParameter | null>(null)
   const [isSavingParam, setIsSavingParam] = useState(false)
-  const [isTripResetting, setIsTripResetting] = useState(false)
+  const [isEstopResetting, setIsEstopResetting] = useState(false)
+  const [isEmergencyStopping, setIsEmergencyStopping] = useState(false)
   const [saveResult, setSaveResult] = useState<{
     tone: 'success' | 'error'
     message: string
@@ -73,8 +75,12 @@ export const DriveControl = ({
 
   useEffect(() => {
     subscribeDevice(deviceId)
-    return () => unsubscribeDevice(deviceId)
-  }, [deviceId, subscribeDevice, unsubscribeDevice])
+    subscribeDevice(wagoId)
+    return () => {
+      unsubscribeDevice(deviceId)
+      unsubscribeDevice(wagoId)
+    }
+  }, [deviceId, wagoId, subscribeDevice, unsubscribeDevice])
 
   useOnDemandParameters({
     deviceId,
@@ -139,33 +145,63 @@ export const DriveControl = ({
     }
   }
 
-  const handleTripReset = async () => {
-    if (isTripResetting) return
+  const handleEstopReset = async () => {
+    if (isEstopResetting) return
     setSaveResult(null)
-    setIsTripResetting(true)
+    setIsEstopResetting(true)
     try {
       const wroteHigh = await writeParameter({
-        deviceId,
-        parameterId: 'P10.34',
+        deviceId: wagoId,
+        parameterId: 'RB_Estop_Reset',
         value: 1
       })
-      if (!wroteHigh) throw new Error('Failed to trigger trip reset')
+      if (!wroteHigh) throw new Error('Failed to trigger E-Stop reset')
 
       await new Promise<void>((resolve) => setTimeout(resolve, 500))
 
       await writeParameter({
-        deviceId,
-        parameterId: 'P10.34',
+        deviceId: wagoId,
+        parameterId: 'RB_Estop_Reset',
         value: 0
       })
 
-      setSaveResult({ tone: 'success', message: 'Trip reset pulse sent' })
+      setSaveResult({ tone: 'success', message: 'E-Stop reset pulse sent' })
     } catch (err) {
-      const message = (err as Error)?.message || 'Trip reset failed'
+      const message = (err as Error)?.message || 'E-Stop reset failed'
       setSaveResult({ tone: 'error', message })
     } finally {
       // Small cooldown to prevent double taps
-      setTimeout(() => setIsTripResetting(false), 500)
+      setTimeout(() => setIsEstopResetting(false), 500)
+    }
+  }
+
+  const handleEmergencyStop = async () => {
+    if (isEmergencyStopping) return
+    setSaveResult(null)
+    setIsEmergencyStopping(true)
+    try {
+      // Send command to open the breaker (Emergency Stop action)
+      const wroteHigh = await writeParameter({
+        deviceId: wagoId,
+        parameterId: 'RB_Main_Brk_Open',
+        value: 1
+      })
+      if (!wroteHigh) throw new Error('Failed to trigger Emergency Stop')
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 500))
+
+      await writeParameter({
+        deviceId: wagoId,
+        parameterId: 'RB_Main_Brk_Open',
+        value: 0
+      })
+
+      setSaveResult({ tone: 'success', message: 'Emergency Stop command sent' })
+    } catch (err) {
+      const message = (err as Error)?.message || 'Emergency Stop failed'
+      setSaveResult({ tone: 'error', message })
+    } finally {
+      setTimeout(() => setIsEmergencyStopping(false), 500)
     }
   }
 
@@ -210,15 +246,22 @@ export const DriveControl = ({
 
           <EmergencyStopContainer>
             <ActionButton
-              label={isTripResetting ? 'TRIP RESETTING...' : 'TRIP RESET'}
+              label={isEstopResetting ? 'RESETTING...' : 'RESET E-STOP'}
               color="yellow"
               icon={RefreshCcw}
               height="72px"
-              disabled={isTripResetting}
-              onClick={handleTripReset}
+              disabled={isEstopResetting}
+              onClick={handleEstopReset}
             />
             <div style={{ height: '12px' }} />
-            <ActionButton label="EMERGENCY STOP" color="red" icon={AlertOctagon} height="72px" />
+            <ActionButton
+              label={isEmergencyStopping ? 'STOPPING...' : 'EMERGENCY STOP'}
+              color="red"
+              icon={AlertOctagon}
+              height="72px"
+              disabled={isEmergencyStopping}
+              onClick={handleEmergencyStop}
+            />
           </EmergencyStopContainer>
         </DriveContent>
       </Card>

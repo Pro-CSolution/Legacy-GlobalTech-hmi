@@ -167,7 +167,7 @@ export const useManualTrendData = (
         console.error('Failed to load manual trend history', err)
         if (seq !== loadSeqRef.current) return
 
-        setError('No se pudo cargar el historial manual')
+        setError('Failed to load manual history')
 
         const attempt = retryAttemptRef.current + 1
         retryAttemptRef.current = attempt

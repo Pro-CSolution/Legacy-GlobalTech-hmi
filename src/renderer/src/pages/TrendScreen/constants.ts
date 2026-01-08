@@ -84,10 +84,14 @@ export const TIME_RANGES = [
   { label: '5M', value: 5 },
   { label: '15M', value: 15 },
   { label: '30M', value: 30 },
-  { label: '1H', value: 60 }
+  { label: '1H', value: 60 },
+  { label: '3H', value: 180 },
+  { label: '6H', value: 360 },
+  { label: '12H', value: 720 },
+  { label: '1D', value: 1440 }
 ]
 
-export const MANUAL_COLORS = ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#3b82f6', '#8b5cf6']
+export const MANUAL_COLORS = ['#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6']
 
 const toLocalDateTimeString = (date: Date): string => {
   const copy = new Date(date.getTime())

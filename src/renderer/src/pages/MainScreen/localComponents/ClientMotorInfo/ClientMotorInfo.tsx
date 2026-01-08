@@ -251,7 +251,7 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
     </InfoItem>
   )
 
-  const VISIBLE_FIELDS: Array<[string, keyof ClientMotorData]> = [
+  const VISIBLE_FIELDS: Array<[string, Exclude<keyof ClientMotorData, 'extras'>]> = [
     ['Customer', 'customer'],
     ['Model', 'model'],
     ['Catalog', 'catalog'],
@@ -331,7 +331,7 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
                   ['Service Factor', 'serviceFactor'],
                   ['Efficiency', 'efficiency'],
                   ['Inverter', 'inverterRating']
-                ] as Array<[string, keyof ClientMotorData]>
+                ] as Array<[string, Exclude<keyof ClientMotorData, 'extras'>]>
               ).map(([label, key]) => (
                 <Field key={key}>
                   <FieldLabel>{label}</FieldLabel>

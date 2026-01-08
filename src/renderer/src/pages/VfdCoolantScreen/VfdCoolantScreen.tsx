@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react'
 import { ScreenLayout } from 'layouts'
-import { useTrendData } from 'hooks'
-import { PARAMETER_ALIASES } from 'types/generated/devices'
+import { useTrendData, useDeviceData } from 'hooks'
 import { TrendChart } from 'components/TrendChart'
 import VerticalGauge from 'components/VerticalGauge'
 
@@ -19,59 +17,48 @@ import { PumpControl } from './localComponents/PumpControl'
 import { SystemStatusPanel } from './localComponents/SystemStatusPanel'
 import { SensorsPanel } from './localComponents/SensorsPanel'
 
+const formatEpochSecondsToLocalTime = (seconds: number): string => {
+  const date = new Date(seconds * 1000)
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
 const VfdCoolantScreen = () => {
-  // Mock State for UI Demo
-  const [pump1Running, setPump1Running] = useState(false)
-  const [pump2Running, setPump2Running] = useState(true)
-  const [systemFault] = useState(false)
-  const [flowLow, setFlowLow] = useState(false)
+  const { raw: wagoData } = useDeviceData('wago')
 
-  // Simulated Analog Values
-  const [coolantPsi, setCoolantPsi] = useState(45)
-  const [coolantTemp, setCoolantTemp] = useState(135)
-  const [leakDetected, setLeakDetected] = useState(false)
+  // Mapeo de valores reales desde WAGO
+  const pump1Running = Boolean(wagoData.Conv_Pump_Run)
+  const coolantPsi = Number(wagoData.Cooling_Water_Press || 0)
+  const coolantTemp = Number(wagoData.Drive_Cooling_Temp || 0)
+  const flowLow = !wagoData.Drive_Coolant_Flow // Si el bit de flujo es falso, el flujo es bajo
+  const leakDetected = Boolean(wagoData.Drive_Coolant_Leak)
+  const coolantPressureOk = Boolean(wagoData.Drive_Coolant_Press)
+  const supply480V = Boolean(wagoData.Supply_480VAC_On)
+  const mainBreakerClosed = Boolean(wagoData.Main_CB_Closed_Light)
 
-  // Use existing hook for Trend Data (using placeholder aliases for demo)
-  // In a real scenario, these would be the actual coolant pressure/temp aliases
-  const { xDomain, getDataset } = useTrendData('drive_avid', ['torqueDemand', 'dcLinkVoltage'], {
+  // Use existing hook for Trend Data
+  const { xDomain, getDataset } = useTrendData('wago', ['Cooling_Water_Press'], {
     windowMinutes: 5
   })
-
-  // Simulate changing values
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Fluctuate values slightly
-      setCoolantPsi((prev) => Math.max(0, Math.min(60, prev + (Math.random() - 0.5) * 2)))
-      setCoolantTemp((prev) => Math.max(100, Math.min(200, prev + (Math.random() - 0.5) * 3)))
-
-      // Randomly toggle fault states rarely
-      if (Math.random() > 0.995) setFlowLow((prev) => !prev)
-      if (Math.random() > 0.998) setLeakDetected((prev) => !prev)
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
 
   return (
     <ScreenLayout>
       <MainGrid>
         {/* Left Control Panel */}
         <LeftColumn>
-          <SystemStatusPanel systemFault={systemFault} flowLow={flowLow} />
+          <SystemStatusPanel
+            flowLow={flowLow}
+            coolantPressureOk={coolantPressureOk}
+            coolantLeak={leakDetected}
+            supply480V={supply480V}
+            mainBreakerClosed={mainBreakerClosed}
+          />
 
           <ControlGroup>
-            <PumpControl
-              title="COOLANT PUMP 1"
-              isRunning={pump1Running}
-              onStart={() => setPump1Running(true)}
-              onStop={() => setPump1Running(false)}
-            />
-
-            <PumpControl
-              title="COOLANT PUMP 2"
-              isRunning={pump2Running}
-              onStart={() => setPump2Running(true)}
-              onStop={() => setPump2Running(false)}
-            />
+            <PumpControl title="COOLANT PUMP 1" isRunning={pump1Running} />
           </ControlGroup>
 
           <SensorsPanel
@@ -87,14 +74,24 @@ const VfdCoolantScreen = () => {
             {/* Using absolute positioning as per component requirement, but relative to this container */}
             <TrendChart
               title="Coolant Pressure Trend (PSI)"
-              datasets={getDataset(PARAMETER_ALIASES.torqueDemand)} // Using torque as mock for pressure
+              datasets={getDataset('Cooling_Water_Press')}
               timeWindow={5}
               variant="modern"
-              position={{ left: 20, top: 20 }}
-              width={1000} // Approximate width to fill container
-              height={700}
+              responsive={true}
+              maintainAspectRatio={false}
+              position={{ left: 0, top: 0 }}
+              width="100%"
+              height="100%"
               scales={{
-                x: { min: xDomain?.min, max: xDomain?.max },
+                x: {
+                  min: xDomain?.min,
+                  max: xDomain?.max,
+                  ticks: {
+                    callback: (val: unknown): string =>
+                      formatEpochSecondsToLocalTime(val as number),
+                    stepSec: 25
+                  }
+                },
                 y: { min: 0, max: 100 }
               }}
             />
@@ -109,11 +106,7 @@ const VfdCoolantScreen = () => {
               minValue={0}
               maxValue={60}
               unitOfMeasure="PSI"
-              endLL={10}
-              endL={20}
-              startH={50}
-              startHH={55}
-              size={{ width: 120, height: 750 }}
+              size={{ width: 100, height: 500 }}
             />
 
             <VerticalGauge
@@ -121,9 +114,7 @@ const VfdCoolantScreen = () => {
               minValue={50}
               maxValue={200}
               unitOfMeasure="°F"
-              startH={160}
-              startHH={180}
-              size={{ width: 120, height: 750 }}
+              size={{ width: 100, height: 500 }}
             />
           </GaugesContainer>
         </RightColumn>

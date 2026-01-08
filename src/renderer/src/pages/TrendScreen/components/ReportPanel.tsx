@@ -19,6 +19,11 @@ import * as S from '../TrendScreen.styles'
 
 type TabType = 'recipients' | 'content' | 'options'
 
+type SendReportResult = {
+  ok: boolean
+  message: string
+}
+
 const TabContainer = styled.div`
   display: flex;
   width: 100%;
@@ -142,7 +147,7 @@ type Props = {
   newEmail: string
   onChangeNewEmail: (value: string) => void
   onAddEmail: () => void
-  onSendReport: () => Promise<boolean> | void
+  onSendReport: () => Promise<SendReportResult>
   isSending: boolean
   onRemoveEmail: (email: string) => void
   isNewEmailValid: boolean
@@ -177,6 +182,7 @@ export const ReportPanel = ({
   const theme = useTheme()
   const [activeTab, setActiveTab] = useState<TabType>('recipients')
   const [isSuccess, setIsSuccess] = useState(false)
+  const [toast, setToast] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
 
   // Virtual Keyboard
   const [kbVisible, setKbVisible] = useState(false)
@@ -185,6 +191,7 @@ export const ReportPanel = ({
 
   // Scrolling + pagination
   const listRef = useRef<HTMLDivElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
   const PAGE_SIZE = 6
   const [page, setPage] = useState(0)
 
@@ -192,8 +199,20 @@ export const ReportPanel = ({
     if (!isOpen) {
       setKbVisible(false)
       setKbField(null)
+      setToast(null)
+      setIsSuccess(false)
+      if (closeTimerRef.current) {
+        window.clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = null
+      }
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (!toast) return undefined
+    const t = window.setTimeout(() => setToast(null), 3000)
+    return () => window.clearTimeout(t)
+  }, [toast])
 
   const trimmedNewEmail = useMemo(() => newEmail.trim(), [newEmail])
   const showInvalid = useMemo(() => {
@@ -235,13 +254,20 @@ export const ReportPanel = ({
   }
 
   const handleSend = async () => {
-    const success = await onSendReport()
-    if (success === true) {
+    if (isSending || isSuccess) return
+
+    setToast(null)
+    const result = await onSendReport()
+    setToast({ tone: result.ok ? 'success' : 'error', message: result.message })
+
+    if (result.ok) {
       setIsSuccess(true)
-      setTimeout(() => {
+      if (closeTimerRef.current) window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = window.setTimeout(() => {
         setIsSuccess(false)
         onClose()
-      }, 2000)
+        closeTimerRef.current = null
+      }, 3000)
     }
   }
 
@@ -346,7 +372,7 @@ export const ReportPanel = ({
 
           {showInvalid && (
             <div style={{ fontSize: '11px', color: theme.colors.status.alarm }}>
-              {emailError || 'Email inválido'}
+              {emailError || 'Invalid email'}
             </div>
           )}
         </>
@@ -415,6 +441,8 @@ export const ReportPanel = ({
           </div>
         </>
       )}
+
+      {toast && <S.Toast $tone={toast.tone}>{toast.message}</S.Toast>}
 
       <S.ActionButton
         $variant="success"

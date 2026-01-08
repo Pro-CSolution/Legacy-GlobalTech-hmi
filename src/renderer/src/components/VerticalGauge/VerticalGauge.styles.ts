@@ -170,18 +170,15 @@ export const ThresholdZone = styled.div<{
 `
 
 // Current level bar
-export const FillBar = styled.div<{
-  fillHeight: number
-  fillColor: string
-}>`
+export const FillBar = styled.div`
   position: absolute;
   width: 100%;
-  height: ${({ fillHeight }) => fillHeight}%;
+  height: var(--vertical-fill-height, 0%);
   bottom: 0;
   background: linear-gradient(
     to top,
-    ${({ fillColor }) => fillColor} 0%,
-    ${({ fillColor }) => fillColor}CC 100%
+    var(--vertical-fill-color, #10b981) 0%,
+    var(--vertical-fill-color-cc, rgba(16, 185, 129, 0.8)) 100%
   );
   transition:
     height 0.5s ease-in-out,
@@ -202,15 +199,15 @@ export const TickMarks = styled.div`
 
 export const TickMark = styled.div<{
   bottom: number
-  isMain?: boolean
+  ismain?: boolean
 }>`
   position: absolute;
-  width: ${({ isMain }) => (isMain ? '40%' : '20%')};
+  width: ${({ ismain }) => (ismain ? '40%' : '20%')};
   height: 2px;
   background-color: ${({ theme }) => theme.colors.text.primary};
   left: 0;
   bottom: ${({ bottom }) => bottom}%;
-  opacity: ${({ isMain }) => (isMain ? 1 : 0.6)};
+  opacity: ${({ ismain }) => (ismain ? 1 : 0.6)};
 `
 
 // Horizontal threshold lines that cross the entire bar

@@ -1,5 +1,16 @@
-import styled from 'styled-components'
+import styled, { keyframes, css } from 'styled-components'
 import { HMI_CONFIG } from 'config/constants'
+
+const pulse = keyframes`
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+`
+
+const spin = keyframes`
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+`
 
 export const HeaderContainer = styled.header`
   height: ${HMI_CONFIG.UI.HEADER_HEIGHT}px;
@@ -10,6 +21,7 @@ export const HeaderContainer = styled.header`
   justify-content: space-between;
   padding: 0 24px;
   backdrop-filter: blur(8px);
+  position: relative; /* enable z-index (keep header above screen overlays) */
   z-index: 50;
   box-shadow: ${({ theme }) => theme.shadows.md};
   flex-shrink: 0;
@@ -19,6 +31,126 @@ export const LeftSection = styled.div`
   display: flex;
   align-items: center;
   gap: 24px;
+`
+
+export const RecordButton = styled.button<{ $isRecording: boolean }>`
+  width: 60px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  color: ${({ theme, $isRecording }) => ($isRecording ? '#ef4444' : theme.colors.text.secondary)};
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  position: relative;
+
+  /* IMPORTANT: We use a CSS variable for progress to avoid generating new styled-components classes
+     on every tick (which can crash the Electron renderer). */
+  ${({ theme, $isRecording }) =>
+    $isRecording
+      ? css`
+          border: 2px solid transparent;
+          background:
+            linear-gradient(
+                ${theme.colors.background.secondary},
+                ${theme.colors.background.secondary}
+              )
+              padding-box,
+            conic-gradient(
+                #ef4444 var(--record-progress-deg, 0deg),
+                ${theme.colors.borders.primary} 0deg
+              )
+              border-box;
+        `
+      : css`
+          border: 1px solid ${theme.colors.borders.primary};
+          background: ${theme.colors.background.secondary};
+        `}
+
+  &:hover {
+    ${({ theme, $isRecording }) =>
+      $isRecording
+        ? css`
+            background:
+              linear-gradient(rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.15)) padding-box,
+              conic-gradient(
+                  #ef4444 var(--record-progress-deg, 0deg),
+                  ${theme.colors.borders.primary} 0deg
+                )
+                border-box;
+          `
+        : css`
+            background: ${theme.colors.background.tertiary};
+            border-color: ${theme.colors.accent.primary};
+          `}
+    color: ${({ theme, $isRecording }) => ($isRecording ? '#ef4444' : theme.colors.text.primary)};
+  }
+
+  ${({ $isRecording }) =>
+    $isRecording &&
+    css`
+      &::after {
+        content: '';
+        position: absolute;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ef4444;
+        top: 6px;
+        right: 6px;
+        animation: ${pulse} 1.5s infinite ease-in-out;
+      }
+    `}
+`
+
+export const SendStatusPill = styled.div<{ $tone: 'sending' | 'success' | 'error' }>`
+  height: 60px;
+  padding: 10px 14px;
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  background: ${({ theme }) => theme.colors.background.secondary};
+  border: 1px solid
+    ${({ theme, $tone }) => {
+      if ($tone === 'error') return `${theme.colors.status.alarm}66`
+      if ($tone === 'success') return `${theme.colors.status.running}66`
+      return `${theme.colors.accent.primary}66`
+    }};
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  min-width: 170px;
+`
+
+export const SendSpinner = styled.div`
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: ${({ theme }) => theme.colors.accent.primary};
+  animation: ${spin} 0.9s linear infinite;
+`
+
+export const SendStatusText = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+`
+
+export const SendStatusTitle = styled.div`
+  font-size: 10px;
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.1em;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  text-transform: uppercase;
+`
+
+export const SendStatusMsg = styled.div`
+  font-family: 'Roboto Mono', monospace;
+  font-size: 12px;
+  color: ${({ theme }) => theme.colors.text.primary};
 `
 
 export const Badge = styled.div`

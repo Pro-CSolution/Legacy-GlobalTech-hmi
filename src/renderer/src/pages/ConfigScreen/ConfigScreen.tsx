@@ -28,7 +28,7 @@ const ConfigScreen = () => {
   const navigate = useNavigate()
 
   const handleRestartApp = () => {
-    // Querés un "reload" del renderer, pero aterrizando siempre en MAIN.
+    // You want a "reload" of the renderer, but always landing on MAIN.
     navigate('/')
     // HashRouter: asegurar que el hash sea #/ antes del reload.
     window.location.hash = '#/'
@@ -51,7 +51,7 @@ const ConfigScreen = () => {
       setErrorModal({
         open: true,
         title: 'RustDesk',
-        message: 'No está disponible fuera de Electron (API no encontrada).'
+        message: 'Not available outside of Electron (API not found).'
       })
       return
     }
@@ -61,16 +61,16 @@ const ConfigScreen = () => {
       setErrorModal({
         open: true,
         title: 'RustDesk',
-        message: e?.message || 'No se pudo abrir RustDesk.'
+        message: e?.message || 'Failed to open RustDesk.'
       })
     })
   }
 
   const handleConfirmReboot = () => {
     setIsRebootOpen(false)
-    // No feedback UI: dispara el request y listo.
+    // No feedback UI: trigger the request and done.
     void rebootSystem().catch((err: unknown) => {
-      // Mostrar motivo si falla
+      // Show reason if it fails
       const maybeAxios = err as {
         message?: string
         response?: { status?: number; data?: { detail?: unknown } }
@@ -83,13 +83,13 @@ const ConfigScreen = () => {
           ? detail
           : typeof maybeAxios.message === 'string'
             ? maybeAxios.message
-            : 'No se pudo reiniciar el sistema.'
+            : 'Failed to restart the system.'
 
       const message = status ? `HTTP ${status} · ${msg}` : msg
 
       setErrorModal({
         open: true,
-        title: 'Reboot falló',
+        title: 'Reboot failed',
         message
       })
     })

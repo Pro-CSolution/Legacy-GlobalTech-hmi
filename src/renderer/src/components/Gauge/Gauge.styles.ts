@@ -176,7 +176,6 @@ export const AlarmArea = styled.div`
 
 export const Arrow = styled.div<{
   $animationDuration: number
-  value: number
 }>`
   z-index: 10;
   position: absolute;
@@ -188,7 +187,7 @@ export const Arrow = styled.div<{
   top: -0.8%;
   transform-origin: 50% 102.5%;
   transition: all ${({ $animationDuration }) => $animationDuration}ms linear;
-  transform: rotate(${({ value }) => value}deg) translateX(-50%);
+  transform: rotate(var(--gauge-arrow-deg, 0deg)) translateX(-50%);
 `
 
 export const WrapperIndicatorNumber = styled.div`

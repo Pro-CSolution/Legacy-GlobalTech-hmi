@@ -354,7 +354,7 @@ export const ManualPanel = ({
         </div>
       )}
 
-      <div style={{ height: '1px', background: theme.colors.borders.primary, margin: '8px 0' }} />
+      <div style={{ height: '1px', background: theme.colors.borders.primary, margin: '2px 0' }} />
 
       {/* Value Capture Form */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

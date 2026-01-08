@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
+import { isAxiosErrorLike } from 'types/errors'
 
 export interface IApiService {
   get<T, P = Record<string, unknown>>(
@@ -40,7 +41,25 @@ export class ApiService implements IApiService {
     this.axiosInstance.interceptors.response.use(
       (response) => response,
       (error) => {
-        console.error('API Error:', error)
+        if (isAxiosErrorLike(error)) {
+          const status = error.response?.status
+          const method = error.config?.method?.toUpperCase()
+          const url = error.config?.baseURL
+            ? `${error.config.baseURL}${error.config.url}`
+            : error.config?.url
+          const detail = error.response?.data
+
+          console.error('API Error:', {
+            message: error.message,
+            code: error.code,
+            status,
+            method,
+            url,
+            detail
+          })
+        } else {
+          console.error('API Error:', error)
+        }
         return Promise.reject(error)
       }
     )

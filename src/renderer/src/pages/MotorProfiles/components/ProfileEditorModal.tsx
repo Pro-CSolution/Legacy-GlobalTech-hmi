@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import styled from 'styled-components'
-import { X, Search, Plus, Trash2 } from 'lucide-react'
+import { X, Search, Plus, Trash2, AlertCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Profile, ProfileParameter } from 'types/profile'
 import { DriveParameter } from 'types/drive'
@@ -200,11 +200,11 @@ const SearchItem = styled.div`
 const ParamList = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 `
 
 const ReadonlyBadge = styled.span<{ $tone?: 'ro' | 'rw' }>`
-  padding: 2px 8px;
+  padding: 2px 6px;
   border-radius: ${({ theme }) => theme.borderRadius.sm};
   font-size: ${({ theme }) => theme.typography.sizes.xs};
   font-weight: ${({ theme }) => theme.typography.weights.medium};
@@ -214,7 +214,7 @@ const ReadonlyBadge = styled.span<{ $tone?: 'ro' | 'rw' }>`
   color: ${({ theme, $tone }) =>
     $tone === 'ro' ? theme.colors.status.warning : theme.colors.status.running};
   background: ${({ theme, $tone }) =>
-    $tone === 'ro' ? `${theme.colors.status.warning}20` : `${theme.colors.status.running}20`};
+    $tone === 'ro' ? `${theme.colors.status.warning}10` : `${theme.colors.status.running}10`};
 `
 
 const NoticeBanner = styled.div<{ $tone: 'success' | 'error' | 'info' }>`
@@ -239,15 +239,17 @@ const NoticeBanner = styled.div<{ $tone: 'success' | 'error' | 'info' }>`
   gap: 8px;
 `
 
-const ParamRow = styled.div`
+/* --- New Parameter Card Styles --- */
+
+const ParamCard = styled.div`
   background: ${({ theme }) => theme.colors.background.secondary};
-  padding: 16px;
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   border-radius: ${({ theme }) => theme.borderRadius.md};
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 
   &:hover {
     border-color: ${({ theme }) => theme.colors.borders.active};
@@ -255,64 +257,67 @@ const ParamRow = styled.div`
   }
 `
 
-const ParamLabelRow = styled.div`
+const CardHeader = styled.div`
   display: flex;
-  align-items: center;
-  gap: 8px;
   justify-content: space-between;
+  align-items: flex-start;
 `
 
-const ParamTitle = styled.div`
+const ParamInfo = styled.div`
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
+`
+
+const ParamName = styled.span`
   font-weight: ${({ theme }) => theme.typography.weights.bold};
   color: ${({ theme }) => theme.colors.text.primary};
   font-size: ${({ theme }) => theme.typography.sizes.md};
 `
 
-const ParamId = styled.span`
-  color: ${({ theme }) => theme.colors.text.secondary};
-  font-size: ${({ theme }) => theme.typography.sizes.sm};
-  font-family: monospace;
+const ParamMeta = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
 `
 
-const DeleteButton = styled.button`
+const ParamIdBadge = styled.span`
+  font-family: 'Roboto Mono', monospace;
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  color: ${({ theme }) => theme.colors.text.secondary};
   background: ${({ theme }) => theme.colors.background.tertiary};
-  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
-  color: ${({ theme }) => theme.colors.status.alarm};
-  width: 64px;
-  height: 100%;
-  min-height: 64px;
-  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  padding: 2px 6px;
+  border-radius: 4px;
+`
+
+const RemoveButton = styled.button`
+  background: transparent;
+  border: none;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  padding: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
 
   &:hover {
-    background: ${({ theme }) => theme.colors.status.alarm};
-    color: ${({ theme }) => theme.colors.text.primary};
-    border-color: ${({ theme }) => theme.colors.status.alarm};
-    transform: scale(1.03);
+    background: ${({ theme }) => theme.colors.status.alarm}20;
+    color: ${({ theme }) => theme.colors.status.alarm};
   }
 `
 
-const ValueContainer = styled.div`
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: stretch;
-  gap: 12px;
+const InputWrapper = styled.div`
+  display: flex;
+  align-items: center;
   background: ${({ theme }) => theme.colors.background.primary};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   border-radius: ${({ theme }) => theme.borderRadius.md};
-  padding: 12px 14px;
+  padding: 0 12px;
+  height: 48px;
   transition: all 0.2s;
-
-  &:hover {
-    border-color: ${({ theme }) => theme.colors.text.secondary};
-  }
+  position: relative;
 
   &:focus-within {
     border-color: ${({ theme }) => theme.colors.accent.primary};
@@ -335,6 +340,23 @@ const StyledValueInput = styled.input`
   }
 `
 
+const StyledSelect = styled.select`
+  background: transparent;
+  color: ${({ theme }) => theme.colors.text.primary};
+  border: none;
+  width: 100%;
+  font-size: ${({ theme }) => theme.typography.sizes.md};
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  padding-right: 24px;
+  
+  option {
+    background: ${({ theme }) => theme.colors.background.secondary};
+    color: ${({ theme }) => theme.colors.text.primary};
+  }
+`
+
 const UnitLabel = styled.span`
   color: ${({ theme }) => theme.colors.text.secondary};
   font-size: ${({ theme }) => theme.typography.sizes.sm};
@@ -343,24 +365,22 @@ const UnitLabel = styled.span`
   background: ${({ theme }) => theme.colors.background.tertiary};
   padding: 2px 6px;
   border-radius: 4px;
+  margin-left: 8px;
 `
 
-const RangeLabel = styled.div`
+const RangeInfo = styled.div`
   font-size: ${({ theme }) => theme.typography.sizes.xs};
   color: ${({ theme }) => theme.colors.text.secondary};
-  margin-top: -4px;
-  padding-left: 2px;
-`
-
-const Select = styled.select`
-  background: ${({ theme }) => theme.colors.background.primary};
-  color: ${({ theme }) => theme.colors.text.primary};
-  border: none;
-  width: 100%;
-  font-size: ${({ theme }) => theme.typography.sizes.md};
-  outline: none;
-  cursor: pointer;
-  appearance: none; // Custom chevron needed if we want perfect UI, but native is ok for now
+  padding-left: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  
+  // Truncate logic
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 `
 
 const Footer = styled.div`
@@ -468,10 +488,8 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       setName(initialProfile.name)
       setColor(initialProfile.color)
       setIcon(initialProfile.icon)
-      // Clonamos objetos para evitar mutaciones accidentales del estado padre (y efectos raros al guardar).
       setParams(initialProfile.parameters.map((p) => ({ ...p })))
 
-      // Fetch metadata for existing parameters
       const fetchMetadata = async () => {
         const uniqueIds = Array.from(new Set(initialProfile.parameters.map((p) => p.parameter_id)))
         if (uniqueIds.length === 0) return
@@ -484,7 +502,6 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
           results.forEach((res, index) => {
             if (res.items && res.items.length > 0) {
               const targetId = uniqueIds[index]
-              // Backend search is fuzzy, so find exact match if possible
               const found = res.items.find((item) => item.id === targetId) || res.items[0]
               if (found) {
                 newMeta[found.id] = found
@@ -509,7 +526,6 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
     setNotice(null)
   }, [initialProfile, isOpen])
 
-  // Search Parameters
   useEffect(() => {
     const doSearch = async () => {
       if (!search || search.length < 2) {
@@ -533,7 +549,6 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       setNotice({ tone: 'error', message: 'Parameter is read-only and cannot be added.' })
       return
     }
-    // Check duplicate
     if (params.some((exist) => exist.parameter_id === p.id && exist.device_id === 'drive_avid')) {
       setNotice({ tone: 'info', message: 'Parameter already exists in this profile.' })
       return
@@ -542,7 +557,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
     setParams((prev) => [
       ...prev,
       {
-        device_id: 'drive_avid', // Hardcoded for now, but extensible
+        device_id: 'drive_avid',
         parameter_id: p.id,
         value: p.default || 0
       }
@@ -564,7 +579,6 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
 
   const handleSave = async () => {
     if (!name) return
-    // Guard extra: evita doble submit (click/touch duplicado) y requests concurrentes con payloads distintos.
     if (savingRef.current) return
     savingRef.current = true
     setSaving(true)
@@ -710,63 +724,64 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   meta.id || p.parameter_id || (p as unknown as { id?: string }).id || '—'
 
                 return (
-                  <ParamRow key={p.id ?? `${p.device_id}-${p.parameter_id}-${idx}`}>
-                    <ValueContainer
-                      onClick={
-                        !isEnum
-                          ? () => openKeyboard({ field: 'paramValue', index: idx }, 'numeric')
-                          : undefined
-                      }
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <ParamLabelRow>
-                          <ParamTitle>
-                            {displayName}
-                            <ParamId>({displayId})</ParamId>
-                          </ParamTitle>
+                  <ParamCard key={p.id ?? `${p.device_id}-${p.parameter_id}-${idx}`}>
+                    <CardHeader>
+                      <ParamInfo>
+                        <ParamName>{displayName}</ParamName>
+                        <ParamMeta>
+                          <ParamIdBadge>{displayId}</ParamIdBadge>
                           <ReadonlyBadge $tone={meta.attributes?.includes('R') ? 'ro' : 'rw'}>
                             {meta.attributes?.includes('R') ? 'RO' : 'RW'}
                           </ReadonlyBadge>
-                        </ParamLabelRow>
-
-                        {isEnum ? (
-                          <Select
-                            value={String(p.value)}
-                            onChange={(e) => updateParamValue(idx, Number(e.target.value))}
-                          >
-                            {meta.options?.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </Select>
-                        ) : (
-                          <StyledValueInput
-                            type="number"
-                            value={String(p.value)}
-                            onChange={(e) => updateParamValue(idx, e.target.value)}
-                            onFocus={() =>
-                              openKeyboard({ field: 'paramValue', index: idx }, 'numeric')
-                            }
-                            placeholder="0.00"
-                          />
-                        )}
-
-                        {meta.unit && <UnitLabel>{meta.unit}</UnitLabel>}
-                        {meta.range_text && <RangeLabel>Range: {meta.range_text}</RangeLabel>}
-                      </div>
-
-                      <DeleteButton
+                        </ParamMeta>
+                      </ParamInfo>
+                      
+                      <RemoveButton
                         onClick={(e) => {
                           e.stopPropagation()
                           removeParam(idx)
                         }}
                         title="Remove parameter"
                       >
-                        <Trash2 size={22} />
-                      </DeleteButton>
-                    </ValueContainer>
-                  </ParamRow>
+                        <Trash2 size={18} />
+                      </RemoveButton>
+                    </CardHeader>
+
+                    <InputWrapper onClick={!isEnum ? () => openKeyboard({ field: 'paramValue', index: idx }, 'numeric') : undefined}>
+                      {isEnum ? (
+                         <StyledSelect
+                            value={String(p.value)}
+                            onChange={(e) => updateParamValue(idx, Number(e.target.value))}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {meta.options?.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </StyledSelect>
+                      ) : (
+                        <StyledValueInput
+                          type="number"
+                          value={String(p.value)}
+                          onChange={(e) => updateParamValue(idx, e.target.value)}
+                          onFocus={() =>
+                            openKeyboard({ field: 'paramValue', index: idx }, 'numeric')
+                          }
+                          placeholder="0.00"
+                        />
+                      )}
+                      
+                      {meta.unit && !isEnum && <UnitLabel>{meta.unit}</UnitLabel>}
+                    </InputWrapper>
+
+                    {!isEnum && meta.range_text && (
+                       <RangeInfo title={meta.range_text}>
+                          <AlertCircle size={12} />
+                          <span>Range: {meta.range_text}</span>
+                       </RangeInfo>
+                    )}
+                  </ParamCard>
                 )
               })}
               {params.length === 0 && (
@@ -799,10 +814,10 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
           }
           label={
             keyboardTarget?.field === 'search'
-              ? 'Buscar parámetro'
+              ? 'Search parameter'
               : keyboardTarget?.field === 'paramValue'
-                ? 'Editar valor'
-                : 'Nombre de perfil'
+                ? 'Edit value'
+                : 'Profile name'
           }
           onConfirm={handleKeyboardConfirm}
           onCancel={() => setKeyboardVisible(false)}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { JSX } from 'react'
+import type { CSSProperties, JSX } from 'react'
 import {
   GaugeContainer,
   CenterCircle,
@@ -297,7 +297,14 @@ const Gauge = ({
               />
             </AlarmAreaContainer>
           )}
-          <Arrow value={scaledNumber} $animationDuration={milliseconds} />
+          <Arrow
+            $animationDuration={milliseconds}
+            style={
+              {
+                '--gauge-arrow-deg': `${scaledNumber}deg`
+              } as CSSProperties
+            }
+          />
         </GaugeWrapper>
       </ThemeProvider>
     </GaugeContainer>

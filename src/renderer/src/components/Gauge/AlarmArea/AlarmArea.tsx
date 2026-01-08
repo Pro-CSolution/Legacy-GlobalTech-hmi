@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { Area } from './AlarmArea.styles'
 
 interface AlarmAreaProps {
@@ -42,7 +43,11 @@ const AlarmArea = ({ color, start, end, visible, minValue, maxValue }: AlarmArea
 
   return (
     <Area
-      $startDegres={startDegrees}
+      style={
+        {
+          '--alarm-area-start-deg': `${startDegrees ?? 0}deg`
+        } as CSSProperties
+      }
       display={!visible ? 'none' : 'initial'}
       xmlns="http://www.w3.org/2000/svg"
       version="1.1"

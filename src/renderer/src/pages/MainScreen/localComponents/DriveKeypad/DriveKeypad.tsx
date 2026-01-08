@@ -19,7 +19,7 @@ export const DriveKeypad: React.FC<DriveKeypadProps> = ({
   return (
     <KeypadWrapper
       aria-hidden={!onClick}
-      aria-label={onClick ? 'Abrir editor rápido de parámetros' : undefined}
+      aria-label={onClick ? 'Open quick parameter editor' : undefined}
       $width={width}
       $height={height}
       $maxWidth={maxWidth}

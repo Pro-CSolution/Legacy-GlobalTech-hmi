@@ -38,4 +38,24 @@ export const GlobalStyles = createGlobalStyle`
   ::-webkit-scrollbar-thumb:hover {
     background: ${({ theme }) => theme.colors.text.secondary};
   }
+
+  /* Utility: spin animation (used by lucide icons with className="animate-spin") */
+  @keyframes hmi-spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .animate-spin {
+    animation: hmi-spin 1s linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-spin {
+      animation: none;
+    }
+  }
 `

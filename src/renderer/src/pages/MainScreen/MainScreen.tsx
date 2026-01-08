@@ -4,6 +4,7 @@ import { TrendChart } from 'components/TrendChart'
 import { useDeviceData, useSendCommand, useTrendData } from 'hooks'
 import { DeviceId } from 'types'
 import { ParameterAlias, PARAMETER_ALIASES } from 'types/generated/devices'
+import type { Dataset } from 'components/TrendChart'
 
 // Local Components
 import { SystemStatus } from './localComponents/SystemStatus/SystemStatus'
@@ -16,6 +17,9 @@ import { ClientMotorInfo } from './localComponents/ClientMotorInfo'
 import { MainContainer } from './MainScreen.styles'
 
 const TREND_ALIASES: ParameterAlias[] = ['torqueDemand', 'dcLinkVoltage', 'speedFeedback']
+const MINI_TREND_WINDOW_MINUTES = 5
+const MINI_TREND_WINDOW_SECONDS = MINI_TREND_WINDOW_MINUTES * 60
+const MINI_TREND_TICK_STEP_SECONDS = 60
 
 const MainScreen = () => {
   const driveId: DeviceId = 'drive_avid'
@@ -27,7 +31,7 @@ const MainScreen = () => {
     driveId,
     TREND_ALIASES,
     {
-      windowMinutes: 5
+      windowMinutes: MINI_TREND_WINDOW_MINUTES
     }
   )
   const [speedRef, setSpeedRef] = useState<number>(0)
@@ -56,6 +60,21 @@ const MainScreen = () => {
   }, [driveData])
 
   const driveRunning = electrical.hz > 0.1 || electrical.torque > 0.1 || electrical.amps > 0.1
+
+  /**
+   * Mini trends: queremos que los ticks NO "caminen" con el reloj.
+   * Para eso renderizamos el eje X en una escala RELATIVA [0..windowSec] y desplazamos los puntos
+   * restando el `trendXDomain.min` actual.
+   */
+  const miniTrendXOffset = trendXDomain?.min
+  const toRelativeDatasets = useMemo(() => {
+    if (typeof miniTrendXOffset !== 'number' || !Number.isFinite(miniTrendXOffset)) return null
+    return (datasets: Dataset[]): Dataset[] =>
+      datasets.map((ds) => ({
+        ...ds,
+        data: ds.data.map((p) => ({ ...p, x: p.x - miniTrendXOffset }))
+      }))
+  }, [miniTrendXOffset])
 
   const [controlState, setControlState] = useState({
     mode: 'local',
@@ -120,47 +139,71 @@ const MainScreen = () => {
         {/* Trend Chart Demo */}
         <TrendChart
           title="Pressure"
-          datasets={getTrendDataset(PARAMETER_ALIASES.torqueDemand)}
-          timeWindow={5}
+          datasets={
+            toRelativeDatasets
+              ? toRelativeDatasets(getTrendDataset(PARAMETER_ALIASES.torqueDemand))
+              : getTrendDataset(PARAMETER_ALIASES.torqueDemand)
+          }
+          timeWindow={MINI_TREND_WINDOW_MINUTES}
           variant="modern"
           position={{ left: 420, top: 470 }}
           width={350}
           height={180}
           scales={{
             x: {
-              min: trendXDomain?.min,
-              max: trendXDomain?.max
+              min: 0,
+              max: MINI_TREND_WINDOW_SECONDS,
+              ticks: { stepSec: MINI_TREND_TICK_STEP_SECONDS }
+            },
+            y: {
+              ticks: { space: 20 }
             }
           }}
         />
 
         <TrendChart
           title="Dc Link Voltage"
-          datasets={getTrendDataset(PARAMETER_ALIASES.dcLinkVoltage)}
-          timeWindow={5}
+          datasets={
+            toRelativeDatasets
+              ? toRelativeDatasets(getTrendDataset(PARAMETER_ALIASES.dcLinkVoltage))
+              : getTrendDataset(PARAMETER_ALIASES.dcLinkVoltage)
+          }
+          timeWindow={MINI_TREND_WINDOW_MINUTES}
           variant="modern"
           position={{ left: 785, top: 470 }}
           width={350}
           height={180}
           scales={{
             x: {
-              min: trendXDomain?.min,
-              max: trendXDomain?.max
+              min: 0,
+              max: MINI_TREND_WINDOW_SECONDS,
+              ticks: { stepSec: MINI_TREND_TICK_STEP_SECONDS }
+            },
+            y: {
+              ticks: { space: 20 }
             }
           }}
         />
         <TrendChart
           title="RPM"
-          datasets={getTrendDataset(PARAMETER_ALIASES.speedFeedback)}
-          timeWindow={5}
+          datasets={
+            toRelativeDatasets
+              ? toRelativeDatasets(getTrendDataset(PARAMETER_ALIASES.speedFeedback))
+              : getTrendDataset(PARAMETER_ALIASES.speedFeedback)
+          }
+          timeWindow={MINI_TREND_WINDOW_MINUTES}
           variant="modern"
           position={{ left: 1150, top: 470 }}
           width={350}
           height={180}
           scales={{
             x: {
-              min: trendXDomain?.min,
-              max: trendXDomain?.max
+              min: 0,
+              max: MINI_TREND_WINDOW_SECONDS,
+              ticks: { stepSec: MINI_TREND_TICK_STEP_SECONDS }
+            },
+            y: {
+              ticks: { space: 20 }
             }
           }}
         />

@@ -158,7 +158,7 @@ const persistTrendConfig = (config: TrendScreenPersistedState): void => {
   try {
     localStorage.setItem(TREND_STORAGE_KEY, JSON.stringify(config))
   } catch (err) {
-    console.warn('No se pudo persistir configuración de trend', err)
+    console.warn('Failed to persist trend configuration', err)
   }
 }
 
@@ -167,7 +167,7 @@ const persistEmailList = (emails: string[]): void => {
   try {
     localStorage.setItem(EMAIL_STORAGE_KEY, JSON.stringify(emails))
   } catch (err) {
-    console.warn('No se pudo persistir lista de emails para reporte', err)
+    console.warn('Failed to persist email list for report', err)
   }
 }
 
@@ -176,7 +176,7 @@ const persistReportMeta = (meta: TrendReportPersistedMeta): void => {
   try {
     localStorage.setItem(REPORT_META_STORAGE_KEY, JSON.stringify(meta))
   } catch (err) {
-    console.warn('No se pudo persistir metadata del reporte', err)
+    console.warn('Failed to persist report metadata', err)
   }
 }
 
@@ -273,7 +273,7 @@ export const useTrendScreenState = () => {
           setManualPointsSeriesId(list[0].id)
         }
       } catch (err) {
-        console.error('No se pudo cargar series manuales', err)
+        console.error('Failed to load manual series', err)
       }
     }
     void loadSeries()
@@ -320,7 +320,7 @@ export const useTrendScreenState = () => {
         setManualPoints(res.points)
         setManualPointsSeriesId(seriesId)
       } catch (err) {
-        console.error('No se pudo cargar puntos manuales', err)
+        console.error('Failed to load manual points', err)
       }
     },
     [timeRange]
@@ -420,7 +420,7 @@ export const useTrendScreenState = () => {
 
       resetManualForm()
     } catch (err) {
-      console.error('No se pudo guardar el punto manual', err)
+      console.error('Failed to save manual point', err)
     } finally {
       setIsManualSubmitting(false)
     }
@@ -452,7 +452,7 @@ export const useTrendScreenState = () => {
         await Promise.all([loadManualPoints(manualPointsSeriesId), reloadManualData()])
       }
     } catch (err) {
-      console.error('No se pudo eliminar punto manual', err)
+      console.error('Failed to delete manual point', err)
     }
   }
 
@@ -482,7 +482,7 @@ export const useTrendScreenState = () => {
       }
       await reloadManualData()
     } catch (err) {
-      console.error('No se pudo eliminar serie manual', err)
+      console.error('Failed to delete manual series', err)
     }
   }
 
@@ -510,7 +510,7 @@ export const useTrendScreenState = () => {
       return
     }
     if (!EMAIL_REGEX.test(normalized)) {
-      setEmailError('Email inválido')
+      setEmailError('Invalid email')
       return
     }
 

@@ -1,6 +1,10 @@
-import { BellRing, Settings } from 'lucide-react'
+import { BellRing, Settings, Circle, Square, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { useNavigate } from 'react-router'
-import { useCurrentTime, useDeviceData } from '../../../hooks'
+import React, { useState, useEffect } from 'react'
+import { useCurrentTime, useDeviceData } from 'hooks'
+import { useScreenRecorder } from 'hooks/useScreenRecorder'
+import { useReportSendStatus } from 'hooks/useReportSendStatus'
+import { VideoReportModal } from '../../Modals/VideoReportModal/VideoReportModal'
 import { DeviceId } from 'types'
 import {
   HeaderContainer,
@@ -24,7 +28,13 @@ import {
   CommTitle,
   CommValue,
   CommSub,
-  ConfigButton
+  ConfigButton,
+  RecordButton,
+  SendStatusPill,
+  SendSpinner,
+  SendStatusText,
+  SendStatusTitle,
+  SendStatusMsg
 } from './Header.styles'
 
 const Header = () => {
@@ -34,6 +44,19 @@ const Header = () => {
   const wagoId: DeviceId = 'wago'
   const { data: driveData, raw: driveRaw, isConnected: socketConnected } = useDeviceData(driveId)
   const { raw: wagoRaw } = useDeviceData(wagoId)
+
+  const {
+    isRecording,
+    recordedBlob,
+    startRecording,
+    stopRecording,
+    clearRecording,
+    elapsedSeconds,
+    maxDuration,
+    maxDurationReached
+  } = useScreenRecorder()
+  const sendStatus = useReportSendStatus()
+  const [showVideoModal, setShowVideoModal] = useState(false)
 
   const driveConnected = socketConnected && Boolean(driveRaw['__connected'])
   const wagoConnected = socketConnected && Boolean(wagoRaw['__connected'])
@@ -80,6 +103,31 @@ const Header = () => {
   const tone: 'ok' | 'warning' | 'alarm' =
     activeTripsCount > 0 ? 'alarm' : activeWarningsCount > 0 ? 'warning' : 'ok'
 
+  const go = (to: string) => navigate(to, { flushSync: true })
+
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      stopRecording()
+    } else {
+      startRecording()
+    }
+  }
+
+  useEffect(() => {
+    if (recordedBlob && !isRecording) {
+      setShowVideoModal(true)
+    }
+  }, [recordedBlob, isRecording])
+
+  const handleModalClose = () => {
+    setShowVideoModal(false)
+  }
+
+  const progressDeg = isRecording ? Math.round((elapsedSeconds / maxDuration) * 360) : 0
+  const recordProgressStyle = {
+    '--record-progress-deg': `${progressDeg}deg`
+  } as React.CSSProperties
+
   return (
     <HeaderContainer>
       <LeftSection>
@@ -96,6 +144,36 @@ const Header = () => {
       </LeftSection>
 
       <RightSection>
+        <RecordButton
+          $isRecording={isRecording}
+          style={recordProgressStyle}
+          onClick={handleToggleRecording}
+          title={isRecording ? 'Stop Recording' : 'Start Screen Recording'}
+        >
+          {isRecording ? <Square size={20} fill="currentColor" /> : <Circle size={20} />}
+        </RecordButton>
+
+        {sendStatus.status !== 'idle' && (
+          <SendStatusPill
+            $tone={sendStatus.status === 'sending' ? 'sending' : sendStatus.status}
+            title={sendStatus.message || ''}
+          >
+            {sendStatus.status === 'sending' && <SendSpinner />}
+            {sendStatus.status === 'success' && <CheckCircle2 size={18} />}
+            {sendStatus.status === 'error' && <AlertTriangle size={18} />}
+            <SendStatusText>
+              <SendStatusTitle>
+                {sendStatus.status === 'sending'
+                  ? 'SENDING'
+                  : sendStatus.status === 'success'
+                    ? 'SENT'
+                    : 'ERROR'}
+              </SendStatusTitle>
+              <SendStatusMsg>{sendStatus.kind === 'video' ? 'Video' : 'Report'}</SendStatusMsg>
+            </SendStatusText>
+          </SendStatusPill>
+        )}
+
         <CommGroup>
           {/* Ambos OK: un solo pill, sin last ok */}
           {commMode === 'ok' && (
@@ -144,7 +222,7 @@ const Header = () => {
           )}
         </CommGroup>
 
-        <AlarmButton $tone={tone} onClick={() => navigate('/alarms')} aria-label="Open alarms">
+        <AlarmButton $tone={tone} onClick={() => go('/alarms')} aria-label="Open alarms">
           <AlarmIconWrap $tone={tone}>
             <BellRing size={20} />
           </AlarmIconWrap>
@@ -161,10 +239,18 @@ const Header = () => {
           <DateText>{currentTime.toLocaleDateString()}</DateText>
         </TimeBlock>
 
-        <ConfigButton onClick={() => navigate('/config')} aria-label="Settings">
+        <ConfigButton onClick={() => go('/config')} aria-label="Settings">
           <Settings size={24} />
         </ConfigButton>
       </RightSection>
+
+      <VideoReportModal
+        isOpen={showVideoModal}
+        onClose={handleModalClose}
+        videoBlob={recordedBlob}
+        onDiscard={clearRecording}
+        autoStopped={maxDurationReached}
+      />
     </HeaderContainer>
   )
 }

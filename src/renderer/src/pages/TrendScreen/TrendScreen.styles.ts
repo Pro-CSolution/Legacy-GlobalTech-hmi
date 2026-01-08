@@ -376,3 +376,17 @@ export const CheckBox = styled.div<{ $isSelected: boolean }>`
     color: #fff;
   }
 `
+
+export const Toast = styled.div<{ $tone: 'success' | 'error' }>`
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  border: 1px solid
+    ${({ theme, $tone }) =>
+      $tone === 'success' ? `${theme.colors.status.running}CC` : `${theme.colors.status.alarm}CC`};
+  background: ${({ theme, $tone }) =>
+    $tone === 'success' ? `${theme.colors.status.running}1F` : `${theme.colors.status.alarm}1F`};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+`

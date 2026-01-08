@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronUp, Delete, X, ArrowLeft } from 'lucide-react'
@@ -79,13 +79,87 @@ export const VirtualKeyboard = ({
 }: VirtualKeyboardProps) => {
   const [currentValue, setCurrentValue] = useState<string>('')
   const [isShift, setIsShift] = useState(false)
+  const currentValueRef = useRef<string>('')
+  const modeRef = useRef<KeyboardMode>(mode)
+  const onConfirmRef = useRef(onConfirm)
+  const onCancelRef = useRef(onCancel)
 
   useEffect(() => {
     if (visible) {
+      // Avoid typing into an underlying focused input while the keyboard is open
+      const active = document.activeElement
+      if (active instanceof HTMLElement) active.blur()
       setCurrentValue(String(initialValue ?? ''))
       setIsShift(false)
     }
   }, [visible, initialValue])
+
+  useEffect(() => {
+    currentValueRef.current = currentValue
+  }, [currentValue])
+
+  useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
+
+  useEffect(() => {
+    onConfirmRef.current = onConfirm
+  }, [onConfirm])
+
+  useEffect(() => {
+    onCancelRef.current = onCancel
+  }, [onCancel])
+
+  useEffect(() => {
+    if (!visible) return
+
+    const isNumericChar = (ch: string) => /^[0-9.\-]$/.test(ch)
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!visible) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCancelRef.current()
+        return
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        onConfirmRef.current(currentValueRef.current)
+        return
+      }
+
+      if (e.key === 'Backspace') {
+        e.preventDefault()
+        setCurrentValue((prev) => prev.slice(0, -1))
+        return
+      }
+
+      if (e.key === 'Delete') {
+        e.preventDefault()
+        setCurrentValue('')
+        return
+      }
+
+      // Let the browser handle navigation keys (Tab, arrows, etc.)
+      if (e.key.length !== 1) return
+
+      let ch = e.key
+
+      // Normalize numeric comma to dot for decimal entry
+      if (modeRef.current === 'numeric' && ch === ',') ch = '.'
+
+      if (modeRef.current === 'numeric' && !isNumericChar(ch)) return
+
+      e.preventDefault()
+      setCurrentValue((prev) => prev + ch)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [visible])
 
   const handlePress = (char: string) => {
     setCurrentValue((prev) => prev + char)

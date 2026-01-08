@@ -41,6 +41,13 @@ import type {
 const DEFAULT_TIME_WINDOW = 5 // minutes
 const DEFAULT_UPDATE_INTERVAL = 1000 // ms
 const SECONDS_PER_MINUTE = 60
+const SHORT_X_TICK_STEP_1M_SEC = 5
+const SHORT_X_TICK_STEP_5M_SEC = 15
+const COMPACT_CHART_MAX_HEIGHT_PX = 220
+const COMPACT_X_AXIS_SPACE_PX = 30
+const COMPACT_Y_AXIS_SPACE_PX = 25
+const DEFAULT_X_AXIS_SPACE_PX = 50
+const DEFAULT_Y_AXIS_SPACE_PX = 40
 
 // === Demo Data Generator ===
 const generateDemoDataPoint = (timeInSeconds: number, config: DemoDataConfig): ChartDataPoint => {
@@ -116,6 +123,37 @@ const buildUPlotData = (datasets: Dataset[]): UPlotData => {
   }
 }
 
+const buildFixedSplits = (min: number, max: number, step: number): number[] => {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step) || step <= 0)
+    return []
+  const span = max - min
+  if (!(span > 0)) return []
+
+  const start = Math.ceil(min / step) * step
+  if (!Number.isFinite(start)) return []
+
+  const count = Math.floor((max - start) / step) + 1
+  const safeCount = Math.min(500, Math.max(0, count))
+
+  const splits: number[] = []
+  for (let i = 0; i < safeCount; i++) {
+    const v = start + i * step
+    if (v < min || v > max) continue
+    splits.push(v)
+  }
+  return splits
+}
+
+const buildEquidistantSplits = (min: number, max: number, count: number): number[] => {
+  if (!Number.isFinite(min) || !Number.isFinite(max) || count < 2) return []
+  const splits: number[] = []
+  const step = (max - min) / (count - 1)
+  for (let i = 0; i < count; i++) {
+    splits.push(min + i * step)
+  }
+  return splits
+}
+
 const findNearestPoint = (
   seriesValues: (number | null)[][],
   datasets: Dataset[],
@@ -185,6 +223,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
     const latestDataRef = useRef<UPlotData>({ data: [], xValues: [], seriesValues: [] })
     const latestDatasetsRef = useRef<Dataset[]>([])
     const clickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null)
+    const plotConfigKeyRef = useRef<string>('')
     const lastPointerRef = useRef<{
       clientX: number
       clientY: number
@@ -241,6 +280,13 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       }),
       [theme, textColor, gridColor, borderColor, backgroundColor, lineColor]
     )
+
+    const isCompact = useMemo(() => {
+      if (typeof height === 'number' && Number.isFinite(height)) {
+        return height <= COMPACT_CHART_MAX_HEIGHT_PX
+      }
+      return false
+    }, [height])
 
     // Format time for X axis (converts seconds to "Xm" format when relative)
     const formatTimeLabel = useCallback((seconds: number): string => {
@@ -355,8 +401,29 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       return undefined
     }, [scales?.x?.max, hasExternalData, timeWindow])
 
+    const perfNow = (): number =>
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now()
+
     // uPlot data
-    const uplotData = useMemo(() => buildUPlotData(activeDatasets), [activeDatasets])
+    const uplotData = useMemo(() => {
+      const t0 = perfNow()
+      const built = buildUPlotData(activeDatasets)
+      const t1 = perfNow()
+
+      if (debugGate('trend.perf.chart.build')) {
+        const totalPoints = activeDatasets.reduce((acc, ds) => acc + (ds.data?.length ?? 0), 0)
+        debugLog('trend.perf', 'buildUPlotData', {
+          ms: Math.round(t1 - t0),
+          datasets: activeDatasets.length,
+          totalPoints,
+          uniqueX: built.xValues.length
+        })
+      }
+
+      return built
+    }, [activeDatasets, debugGate])
 
     useEffect(() => {
       latestDataRef.current = uplotData
@@ -435,6 +502,31 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       [scales?.x?.ticks, resolvedXMax, formatTimeLabel]
     )
 
+    /**
+     * Densidad "elegante" de ticks en eje X:
+     * En 1M/5M queremos menos celdas (ticks más separados), como en 15M+.
+     */
+    const xTickStepSec = useMemo(() => {
+      // Override opcional desde `scales.x.ticks.stepSec` (sin tocar pantallas).
+      const ticks = scales?.x?.ticks as { stepSec?: unknown } | undefined
+      const override = ticks?.stepSec
+      if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override
+
+      const xMin = scales?.x?.min
+      const xMax = resolvedXMax
+      const spanSec =
+        typeof xMin === 'number' &&
+        Number.isFinite(xMin) &&
+        typeof xMax === 'number' &&
+        Number.isFinite(xMax)
+          ? xMax - xMin
+          : timeWindow * SECONDS_PER_MINUTE
+
+      if (spanSec <= 1 * SECONDS_PER_MINUTE) return SHORT_X_TICK_STEP_1M_SEC
+      if (spanSec <= 5 * SECONDS_PER_MINUTE) return SHORT_X_TICK_STEP_5M_SEC
+      return null
+    }, [scales?.x?.ticks, scales?.x?.min, resolvedXMax, timeWindow])
+
     const yTickFormatter = useCallback(
       (val: number) => {
         const ticks = scales?.y?.ticks as { callback?: (value: number) => string | number }
@@ -448,17 +540,40 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       [scales?.y?.ticks]
     )
 
+    /**
+     * IMPORTANTE (producción):
+     * Si algo falla en un cleanup de React (unmount), puede abortar el commit de navegación.
+     * Esto se manifiesta como: cambia el hash/URL pero la UI no cambia hasta hacer reload.
+     * Por eso este destroy es *defensivo* y nunca debe tirar excepción.
+     */
     const destroyPlot = useCallback(() => {
-      if (resizeObserverRef.current && plotContainerRef.current) {
-        resizeObserverRef.current.disconnect()
+      try {
+        if (resizeObserverRef.current && plotContainerRef.current) {
+          resizeObserverRef.current.disconnect()
+          resizeObserverRef.current = null
+        }
+      } catch (err) {
+        console.error('[TrendChart] ResizeObserver disconnect failed', err)
         resizeObserverRef.current = null
       }
-      if (plotContainerRef.current && clickHandlerRef.current) {
-        plotContainerRef.current.removeEventListener('click', clickHandlerRef.current)
+
+      try {
+        if (plotContainerRef.current && clickHandlerRef.current) {
+          plotContainerRef.current.removeEventListener('click', clickHandlerRef.current)
+          clickHandlerRef.current = null
+        }
+      } catch (err) {
+        console.error('[TrendChart] click handler cleanup failed', err)
         clickHandlerRef.current = null
       }
-      if (plotInstanceRef.current) {
-        plotInstanceRef.current.destroy()
+
+      try {
+        if (plotInstanceRef.current) {
+          plotInstanceRef.current.destroy()
+          plotInstanceRef.current = null
+        }
+      } catch (err) {
+        console.error('[TrendChart] uPlot destroy failed', err)
         plotInstanceRef.current = null
       }
     }, [])
@@ -536,6 +651,10 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       const container = plotContainerRef.current
       if (!container || !uplotData.data.length) return
 
+      const perfCreateStart =
+        typeof performance !== 'undefined' && typeof performance.now === 'function'
+          ? performance.now()
+          : Date.now()
       destroyPlot()
 
       const { width: boxWidth, height: boxHeight } = container.getBoundingClientRect()
@@ -564,6 +683,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
         {
           width: baseWidth,
           height: baseHeight,
+          padding: isCompact ? [10, 10, -17, 0] : [12, 12, 8, 12],
           series: uPlotSeries,
           axes: [
             {
@@ -579,8 +699,20 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
                 stroke: colors.grid,
                 width: 1
               },
-              values: (_, vals) => vals.map((v) => xTickFormatter(v as number)),
-              space: 50
+              values: (_, vals) =>
+                vals.map((v) => {
+                  const out = xTickFormatter(v as number)
+                  return typeof out === 'number' ? String(out) : out
+                }),
+              ...(xTickStepSec
+                ? {
+                    splits: (_u: uPlot, _axisIdx: number, min: number, max: number) =>
+                      buildFixedSplits(min, max, xTickStepSec)
+                  }
+                : {}),
+              space:
+                (scales?.x?.ticks as { space?: number })?.space ??
+                (isCompact ? COMPACT_X_AXIS_SPACE_PX : DEFAULT_X_AXIS_SPACE_PX)
             },
             {
               show: scales?.y?.display !== false,
@@ -591,7 +723,15 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
                 width: 1
               },
               values: (_, vals) => vals.map((v) => yTickFormatter(v as number)),
-              space: 40
+              ...(isCompact
+                ? {
+                    splits: (_u: uPlot, _axisIdx: number, min: number, max: number) =>
+                      buildEquidistantSplits(min, max, 5)
+                  }
+                : {}),
+              space:
+                (scales?.y?.ticks as { space?: number })?.space ??
+                (isCompact ? COMPACT_Y_AXIS_SPACE_PX : DEFAULT_Y_AXIS_SPACE_PX)
             }
           ],
           scales: {
@@ -648,6 +788,21 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       plotInstanceRef.current = plot
       applyScales(plot)
 
+      if (debugGate('trend.perf.chart.create')) {
+        const perfCreateEnd =
+          typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now()
+        const points = activeDatasets.reduce((acc, ds) => acc + (ds.data?.length ?? 0), 0)
+        debugLog('trend.perf', 'uPlot createPlot', {
+          ms: Math.round(perfCreateEnd - perfCreateStart),
+          series: uPlotSeries.length - 1,
+          datasets: activeDatasets.length,
+          totalPoints: points,
+          uniqueX: uplotData.xValues.length
+        })
+      }
+
       if (responsive) {
         resizeObserverRef.current = new ResizeObserver((entries) => {
           const entry = entries[0]
@@ -692,9 +847,13 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       responsive,
       scales?.x?.display,
       scales?.x?.grid,
+      scales?.x?.ticks,
       scales?.y?.display,
       scales?.y?.grid,
+      scales?.y?.ticks,
       showGrid,
+      isCompact,
+      xTickStepSec,
       xTickFormatter,
       yTickFormatter,
       uPlotSeries,
@@ -714,19 +873,49 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       const currentSeriesCount = plotInstanceRef.current?.series.length || 0
       const expectedSeriesCount = uPlotSeries.length
 
-      const needsRecreate = currentSeriesCount !== expectedSeriesCount
+      const configKey = `${timeWindow}|${xTickStepSec ?? 'auto'}`
+      const needsRecreate =
+        currentSeriesCount !== expectedSeriesCount || plotConfigKeyRef.current !== configKey
 
       if (needsRecreate || !plotInstanceRef.current) {
         createPlot()
+        plotConfigKeyRef.current = configKey
       } else {
+        const perfSetStart =
+          typeof performance !== 'undefined' && typeof performance.now === 'function'
+            ? performance.now()
+            : Date.now()
         plotInstanceRef.current.setData(uplotData.data)
         applyScales(plotInstanceRef.current)
+        if (debugGate('trend.perf.chart.setData')) {
+          const perfSetEnd =
+            typeof performance !== 'undefined' && typeof performance.now === 'function'
+              ? performance.now()
+              : Date.now()
+          const points = activeDatasets.reduce((acc, ds) => acc + (ds.data?.length ?? 0), 0)
+          debugLog('trend.perf', 'uPlot setData+applyScales', {
+            ms: Math.round(perfSetEnd - perfSetStart),
+            series: uPlotSeries.length - 1,
+            datasets: activeDatasets.length,
+            totalPoints: points,
+            uniqueX: uplotData.xValues.length
+          })
+        }
       }
 
       return () => {
         // cleanup handled separately on unmount
       }
-    }, [uPlotSeries, uPlotSeries.length, uplotData, createPlot, applyScales, destroyPlot])
+    }, [
+      uPlotSeries,
+      uPlotSeries.length,
+      uplotData,
+      createPlot,
+      applyScales,
+      destroyPlot,
+      timeWindow,
+      xTickStepSec
+    ])
 
     // Cleanup on unmount
     useEffect(
@@ -905,7 +1094,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
               <TitleText variant={variant}>{title}</TitleText>
             </TitleBar>
           )}
-          <NoDataContainer>Sin datos disponibles</NoDataContainer>
+          <NoDataContainer>No available data</NoDataContainer>
         </Container>
       )
     }
@@ -922,12 +1111,12 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
         style={style}
       >
         {showTitle && (
-          <TitleBar variant={variant}>
+          <TitleBar variant={variant} $compact={isCompact}>
             <TitleText variant={variant}>{title}</TitleText>
             <TimeIndicator>{timeWindow}m window</TimeIndicator>
           </TitleBar>
         )}
-        <ChartWrapper>
+        <ChartWrapper $compact={isCompact}>
           <div ref={plotContainerRef} style={{ width: '100%', height: '100%' }} />
 
           {showLegend && (

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, type JSX } from 'react'
+import type { CSSProperties } from 'react'
 import {
   VerticalGaugeContainer,
   ValueDisplay,
@@ -298,7 +299,15 @@ const VerticalGauge = ({
           )}
 
           {/* Current level bar */}
-          <FillBar fillHeight={fillHeight} fillColor={fillColor} />
+          <FillBar
+            style={
+              {
+                '--vertical-fill-height': `${fillHeight}%`,
+                '--vertical-fill-color': fillColor,
+                '--vertical-fill-color-cc': `${fillColor}CC`
+              } as CSSProperties
+            }
+          />
 
           {/* Horizontal threshold lines */}
           {showAlarms && (
@@ -312,7 +321,7 @@ const VerticalGauge = ({
           {/* Scale marks */}
           <TickMarks>
             {tickMarks.map((tick) => (
-              <TickMark key={tick.key} bottom={tick.bottom} isMain={tick.isMain} />
+              <TickMark key={tick.key} bottom={tick.bottom} ismain={tick.isMain} />
             ))}
           </TickMarks>
         </GaugeColumn>

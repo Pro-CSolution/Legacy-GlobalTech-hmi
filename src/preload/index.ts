@@ -3,7 +3,13 @@ import { electronAPI } from '@electron-toolkit/preload'
 
 // Custom APIs for renderer
 const api = {
-  openRustDesk: () => ipcRenderer.invoke('system:open-rustdesk') as Promise<boolean>
+  openRustDesk: () => ipcRenderer.invoke('system:open-rustdesk') as Promise<boolean>,
+  getScreenSourceId: () => ipcRenderer.invoke('system:get-screen-source-id') as Promise<string>,
+  saveVideo: (buffer: ArrayBuffer) =>
+    ipcRenderer.invoke('system:save-video', buffer) as Promise<string>,
+  log: (level: 'INFO' | 'WARN' | 'ERROR', message: string, meta?: unknown) => {
+    ipcRenderer.send('system:renderer-log', { level, message, meta })
+  }
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

@@ -130,7 +130,7 @@ export const GaugeConfigModal = ({
               </S.TitleRow>
               {subtitle && <S.Subtitle title={subtitle}>{subtitle}</S.Subtitle>}
             </S.TitleGroup>
-            <S.CloseButton onClick={onClose} aria-label="Cerrar">
+            <S.CloseButton onClick={onClose} aria-label="Close">
               <X size={20} />
             </S.CloseButton>
           </S.Header>

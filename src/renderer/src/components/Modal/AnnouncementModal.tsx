@@ -52,9 +52,9 @@ const Button = styled.button`
 
 export const AnnouncementModal = ({
   isOpen,
-  title = 'Aviso',
+  title = 'Notice',
   message = '',
-  actionLabel = 'Entendido',
+  actionLabel = 'OK',
   onClose
 }: AnnouncementModalProps) => {
   return (

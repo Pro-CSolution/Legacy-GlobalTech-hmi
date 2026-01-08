@@ -9,6 +9,7 @@ export const FooterContainer = styled.footer`
   gap: 10px;
   padding: 8px;
   flex-shrink: 0;
+  position: relative; /* enable z-index (ensure footer stays above screen overlays) */
   z-index: 50;
 `
 

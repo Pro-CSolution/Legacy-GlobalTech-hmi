@@ -106,11 +106,11 @@ const shouldForwardVariantProp = (prop: string): boolean => prop !== 'variant'
 
 export const TitleBar = styled.div.withConfig({
   shouldForwardProp: (prop) => shouldForwardVariantProp(prop)
-})<TitleBarProps>`
+})<TitleBarProps & { $compact?: boolean }>`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: ${({ $compact }) => ($compact ? '4px 10px' : '8px 12px')};
   border-bottom: 1px solid ${({ theme }) => theme.colors.borders.primary};
   flex-shrink: 0;
 
@@ -163,15 +163,15 @@ export const TimeIndicator = styled.span`
 
 // === Chart Wrapper ===
 
-export const ChartWrapper = styled.div`
+export const ChartWrapper = styled.div<{ $compact?: boolean }>`
   flex: 1;
   position: relative;
-  padding: 8px;
+  padding: ${({ $compact }) => ($compact ? '0px' : '8px')};
   min-height: 0;
 
   .uplot {
     width: 100%;
-    height: 100%;
+    height: 200%;
     font-family: ${({ theme }) => theme.typography.fontFamily};
   }
 `

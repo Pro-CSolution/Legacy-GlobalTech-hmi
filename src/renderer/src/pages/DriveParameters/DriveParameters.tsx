@@ -6,6 +6,7 @@ import { useSendCommand } from 'hooks/useSendCommand'
 import { getDriveMenus, getDriveParameters } from 'services/driveService'
 import { DriveMenu, DriveParameter } from 'types/drive'
 import { DeviceId, ParameterId } from 'types'
+import { VirtualKeyboard } from 'components/VirtualKeyboard'
 import { ParameterDetailModal } from './components/ParameterDetailModal/ParameterDetailModal'
 import {
   Badge,
@@ -60,6 +61,10 @@ const DriveParameters = () => {
   const [loading, setLoading] = useState(false)
   const [modalParam, setModalParam] = useState<DriveParameter | null>(null)
   const [saving, setSaving] = useState(false)
+  const [searchKeyboard, setSearchKeyboard] = useState<{ visible: boolean; initialValue: string }>({
+    visible: false,
+    initialValue: ''
+  })
 
   const menuListRef = useRef<HTMLDivElement>(null)
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -185,6 +190,13 @@ const DriveParameters = () => {
           <SearchRow>
             <SearchInput
               value={search}
+              onPointerDown={(e) => {
+                if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                  e.preventDefault()
+                  setSearchKeyboard({ visible: true, initialValue: search })
+                }
+              }}
+              onClick={() => setSearchKeyboard({ visible: true, initialValue: search })}
               onChange={(e) => {
                 setSearch(e.target.value)
                 setPage(1)
@@ -332,6 +344,19 @@ const DriveParameters = () => {
           onClose={closeModal}
           onSave={handleSave}
           isSaving={saving}
+        />
+
+        <VirtualKeyboard
+          visible={searchKeyboard.visible}
+          mode="alpha"
+          label="Search"
+          initialValue={searchKeyboard.initialValue}
+          onConfirm={(val) => {
+            setSearch(val)
+            setPage(1)
+            setSearchKeyboard({ visible: false, initialValue: '' })
+          }}
+          onCancel={() => setSearchKeyboard({ visible: false, initialValue: '' })}
         />
       </PageWrapper>
     </ScreenLayout>

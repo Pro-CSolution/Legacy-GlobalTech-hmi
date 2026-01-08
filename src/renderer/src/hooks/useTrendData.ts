@@ -36,6 +36,11 @@ type Point = { x: number; y: number }
 const filterValidPoints = (points: Point[]): Point[] =>
   points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
 
+const perfNow = (): number =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
 const computeSpan = (
   points: Point[]
 ): { minX: number | null; maxX: number | null; spanSec: number } => {
@@ -169,6 +174,8 @@ export const useTrendData = (
     async ({ resetRetry = true }: { resetRetry?: boolean } = {}) => {
       if (!parameterIds.length) return
 
+      const perfSessionId = `${deviceId}:${windowMinutes}m:${parameterIds.length}p:${Date.now()}`
+      const perfLoadStart = perfNow()
       if (resetRetry) {
         retryAttemptRef.current = 0
         clearRetryTimer()
@@ -204,14 +211,29 @@ export const useTrendData = (
         }
 
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+          const reqStart = perfNow()
           response = await fetchTrendHistory({
             deviceId,
             parameterIds,
             windowMinutes,
             limitPerParam: requestLimit
           })
+          const reqEnd = perfNow()
 
           if (seq !== loadSeqRef.current) return
+
+          if (debugGate('trend.perf.history.request')) {
+            debugLog('trend.perf', 'history request done', {
+              id: perfSessionId,
+              attempt,
+              ms: Math.round(reqEnd - reqStart),
+              deviceId,
+              windowMinutes,
+              params: parameterIds.length,
+              requestLimit,
+              server: response?.meta ?? null
+            })
+          }
 
           const perSeries: Array<Record<string, unknown>> = []
           let hitLimit = false
@@ -282,19 +304,60 @@ export const useTrendData = (
           // Si llegamos al tope, no podemos pedir más sin arriesgar performance.
           if (requestLimit >= MAX_REQUEST_LIMIT) break
 
-          requestLimit = Math.min(MAX_REQUEST_LIMIT, requestLimit * 2)
+          /**
+           * Optimización: en rangos grandes (p.ej. 3H) el "doble y reintenta" puede tardar mucho
+           * (5 requests: 2k→4k→8k→16k→32k...). Estimamos el límite necesario a partir del span
+           * temporal cubierto por los puntos recibidos (rate aproximada) y saltamos más cerca
+           * del valor final para evitar múltiples roundtrips.
+           */
+          let estimatedLimit = requestLimit
+          for (const entry of perSeries) {
+            if (entry.truncatedStart !== true) continue
+            const minX = typeof entry.minX === 'number' ? entry.minX : null
+            const maxX = typeof entry.maxX === 'number' ? entry.maxX : null
+            const countValid = typeof entry.countValid === 'number' ? entry.countValid : null
+            if (minX == null || maxX == null || countValid == null) continue
+            const spanSec = maxX - minX
+            if (!(spanSec > 0)) continue
+            const needed = Math.ceil((countValid * windowSec) / spanSec)
+            if (Number.isFinite(needed)) {
+              estimatedLimit = Math.max(estimatedLimit, needed)
+            }
+          }
+
+          const nextLimit = Math.min(
+            MAX_REQUEST_LIMIT,
+            // aseguramos progreso mínimo x2, pero si la estimación es mayor saltamos directo
+            Math.max(requestLimit * 2, estimatedLimit)
+          )
+
+          if (debugGate('trend.perf.history.limit')) {
+            debugLog('trend.perf', 'history requestLimit adjust', {
+              attempt,
+              requestLimit,
+              estimatedLimit,
+              nextLimit,
+              windowSec
+            })
+          }
+
+          requestLimit = nextLimit
         }
 
         if (!response) {
-          throw new Error('No se pudo obtener historial de tendencia (respuesta vacía)')
+          throw new Error('Failed to get trend history (empty response)')
         }
 
-        console.debug('[useTrendData] history response', {
-          deviceId,
-          parameterIds,
-          seriesKeys: Object.keys(response.series || {}),
-          firstSeriesSample: response.series?.[parameterIds[0]]?.[0]
-        })
+        const mapStart = perfNow()
+        if (debugGate('trend.data.history.response')) {
+          debugLog('trend.data', 'history response', {
+            deviceId,
+            parameterIds,
+            seriesKeys: Object.keys(response.series || {}),
+            firstSeriesSample: response.series?.[parameterIds[0]]?.[0],
+            meta: response.meta ?? null
+          })
+        }
 
         // Ancla de tiempo consistente: usamos el mayor entre "ahora" (cliente) y el último timestamp observado en el historial.
         // Esto evita saltos fuertes si hay drift de reloj entre backend/cliente, y también evita que el 1er update realtime recorte de golpe.
@@ -333,6 +396,7 @@ export const useTrendData = (
             borderWidth: 2
           }
         })
+        const mapEnd = perfNow()
 
         setDatasets(nextDatasets)
         setXDomain({ min: cutoff, max: anchorMax })
@@ -362,15 +426,42 @@ export const useTrendData = (
             stats
           })
         }
+
+        if (debugGate('trend.perf.history.total')) {
+          const totalPoints = nextDatasets.reduce((acc, ds) => acc + (ds.data?.length ?? 0), 0)
+          debugLog('trend.perf', 'history mapped', {
+            id: perfSessionId,
+            ms: Math.round(mapEnd - mapStart),
+            datasets: nextDatasets.length,
+            totalPoints,
+            pointsPerSeries: nextDatasets.map((ds) => ({
+              parameterId: ds.parameterId,
+              points: ds.data.length
+            })),
+            server: response.meta ?? null
+          })
+          debugLog('trend.perf', 'history load total', {
+            id: perfSessionId,
+            ms: Math.round(perfNow() - perfLoadStart)
+          })
+        }
       } catch (err) {
         console.error('Failed to load trend history', err)
         if (seq !== loadSeqRef.current) return
 
-        setError('No se pudo cargar el historial')
+        setError('Failed to load history')
 
         // Reintentos automáticos estilo "reconexión" para evitar quedar en error hasta refrescar/navegar.
         const attempt = retryAttemptRef.current + 1
         retryAttemptRef.current = attempt
+
+        if (debugGate('trend.perf.history.error')) {
+          debugLog('trend.perf', 'history load failed', {
+            id: perfSessionId,
+            retryAttempt: attempt,
+            msSinceStart: Math.round(perfNow() - perfLoadStart)
+          })
+        }
 
         // Evita múltiples timers paralelos.
         if (retryTimerRef.current === null) {
@@ -498,8 +589,17 @@ export const useTrendData = (
     })
 
     return () => {
-      off()
-      unsubscribeTrend(deviceId)
+      // Cleanup defensivo: nunca debe bloquear navegación si falla socket/off.
+      try {
+        off()
+      } catch (err) {
+        console.error('[useTrendData] off() failed during cleanup', err)
+      }
+      try {
+        unsubscribeTrend(deviceId)
+      } catch (err) {
+        console.error('[useTrendData] unsubscribeTrend failed during cleanup', err)
+      }
     }
   }, [deviceId, parameterIds, timeWindowSeconds, limitPerParam, debugGate])
 

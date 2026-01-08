@@ -2,9 +2,22 @@ import { apiService, socketService, SOCKET_EVENTS } from './index'
 import { DeviceId, ParameterId } from '../types'
 
 export type TrendPoint = { time: string; value: number }
+export type TrendHistoryMeta = {
+  query_ms?: number
+  fetch_ms?: number
+  group_ms?: number
+  reverse_ms?: number
+  total_ms?: number
+  rows?: number
+  params?: number
+  max_rows?: number
+  limit_per_param?: number
+  window_minutes?: number
+}
 export type TrendSeriesResponse = {
   device_id: string
   series: Record<string, TrendPoint[]>
+  meta?: TrendHistoryMeta
 }
 
 export type FetchTrendHistoryParams = {
@@ -57,14 +70,21 @@ export async function fetchTrendHistory({
   endTime,
   limitPerParam = 2000
 }: FetchTrendHistoryParams): Promise<TrendSeriesResponse> {
-  return apiService.get<TrendSeriesResponse>('/trend/history', {
-    device_id: deviceId,
-    parameter_ids: parameterIds,
-    window_minutes: windowMinutes,
-    start_time: startTime,
-    end_time: endTime,
-    limit_per_param: limitPerParam
-  })
+  // `/trend/history` puede ser pesado con ventanas grandes (p.ej. 3h) y múltiples parámetros.
+  // Devolvemos un timeout específico para no chocar con el TIMEOUT global (5s).
+  const requestTimeoutMs = 30_000
+  return apiService.get<TrendSeriesResponse>(
+    '/trend/history',
+    {
+      device_id: deviceId,
+      parameter_ids: parameterIds,
+      window_minutes: windowMinutes,
+      start_time: startTime,
+      end_time: endTime,
+      limit_per_param: limitPerParam
+    },
+    { timeout: requestTimeoutMs }
+  )
 }
 
 export function ensureTrendSocket() {

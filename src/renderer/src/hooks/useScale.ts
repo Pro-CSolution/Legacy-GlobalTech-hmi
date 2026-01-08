@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, RefObject } from 'react'
+import { useRef, useState, useLayoutEffect, RefObject } from 'react'
 import { debugLog, isDebugEnabled } from 'utils/debug'
 
 interface UseAspectScaleReturn {
@@ -10,7 +10,10 @@ export const useAspectScale = (baseWidth: number, baseHeight: number): UseAspect
   const containerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
 
-  useEffect(() => {
+  // Use layout effect so the first paint already uses the correct scale.
+  // This prevents a visible "jump" (render at scale=1, then quickly correcting)
+  // when navigating between routes that mount/unmount the scaled container.
+  useLayoutEffect(() => {
     let lastLogAt = -Infinity
     const resize = (): void => {
       if (!containerRef.current) return
