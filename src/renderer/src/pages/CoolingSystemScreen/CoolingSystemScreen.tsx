@@ -69,10 +69,8 @@ const resolveUiPumpConfig = (pump: PumpConfig, scope: MotorScope): PumpConfig =>
     if (pump2) {
       return {
         ...pump,
-        runOutputId: pump2.runOutputId,
         startCommandId: pump2.startCommandId,
-        stopCommandId: pump2.stopCommandId,
-        runningId: pump2.runningId
+        stopCommandId: pump2.stopCommandId
       }
     }
   }
