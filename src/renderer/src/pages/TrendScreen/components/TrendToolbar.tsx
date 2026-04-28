@@ -1,5 +1,15 @@
 import { useState } from 'react'
-import { Activity, CalendarRange, Filter, Mail, Plus, SlidersHorizontal, X } from 'lucide-react'
+import {
+  Activity,
+  CalendarRange,
+  Filter,
+  Mail,
+  Play,
+  Plus,
+  SlidersHorizontal,
+  Square,
+  X
+} from 'lucide-react'
 import * as S from '../TrendScreen.styles'
 import type { TrendCustomRange, TrendRangeMode } from '../types'
 
@@ -32,6 +42,9 @@ type Props = {
   isReportOpen: boolean
   onToggleReport: () => void
   reportDisabled?: boolean
+  isRecording: boolean
+  onToggleRecording: () => void
+  recordingDisabled?: boolean
 }
 
 export const TrendToolbar = ({
@@ -60,7 +73,10 @@ export const TrendToolbar = ({
   onToggleCurrentValues,
   isReportOpen,
   onToggleReport,
-  reportDisabled = false
+  reportDisabled = false,
+  isRecording,
+  onToggleRecording,
+  recordingDisabled = false
 }: Props) => {
   const [isRangeOpen, setIsRangeOpen] = useState(false)
 
@@ -129,6 +145,14 @@ export const TrendToolbar = ({
           >
             <Activity size={14} />
             <span>CURRENT VALUES</span>
+          </S.ActionButton>
+          <S.ActionButton
+            $variant={isRecording ? 'danger' : 'success'}
+            onClick={onToggleRecording}
+            disabled={recordingDisabled}
+          >
+            {isRecording ? <Square size={14} /> : <Play size={14} />}
+            <span>{isRecording ? 'STOP RECORDING DATA' : 'START RECORDING DATA'}</span>
           </S.ActionButton>
           <S.ActionButton
             $variant={isReportOpen ? 'primary' : undefined}

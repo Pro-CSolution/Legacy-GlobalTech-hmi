@@ -365,6 +365,45 @@ export const ChartCanvasShell = styled.div`
   min-height: 0;
 `
 
+export const RecordingStatusBar = styled.div<{ $tone?: 'warning' | 'recording' | 'stopped' }>`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.borderRadius.md};
+  border: 1px solid
+    ${({ $tone, theme }) => {
+      if ($tone === 'recording') return `${theme.colors.status.running}88`
+      if ($tone === 'stopped') return `${theme.colors.accent.primary}88`
+      return '#facc15'
+    }};
+  background:
+    ${({ $tone, theme }) => {
+      if ($tone === 'recording') return `${theme.colors.status.running}18`
+      if ($tone === 'stopped') return `${theme.colors.accent.primary}16`
+      return 'rgba(250, 204, 21, 0.14)'
+    }};
+`
+
+export const RecordingStatusText = styled.div<{ $tone?: 'warning' | 'recording' | 'stopped' }>`
+  font-size: 12px;
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.03em;
+  color: ${({ $tone, theme }) => {
+    if ($tone === 'recording') return theme.colors.status.running
+    if ($tone === 'stopped') return theme.colors.text.primary
+    return '#facc15'
+  }};
+`
+
+export const RecordingStatusMeta = styled.div`
+  font-size: 11px;
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
 export const DualChartsGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -22,9 +22,17 @@ import type {
 } from 'services'
 import { runReportSend } from 'hooks/useReportSendStatus'
 import { useMotorControlModePreference } from 'hooks/useMotorControlModePreference'
-import { useAccessMode, useIsViewportBelow } from 'hooks'
+import { usePreferredSingleMotorScope } from 'hooks/usePreferredSingleMotorScope'
+import {
+  useAccessMode,
+  useIsViewportBelow,
+  useTemperatureUnitPreference,
+  useTrendRecording,
+  useWagoDisplayNameOverrides
+} from 'hooks'
 import { useTheme } from 'styled-components'
 import { getErrorMessage, isAxiosErrorLike } from 'types/errors'
+import type { ParameterId } from 'types'
 import { debugLog, isDebugEnabled } from 'utils/debug'
 import { loadClientMotorInfo, loadDualClientMotorInfo } from 'utils/clientMotorInfoStorage'
 import { CurrentValuesPanel } from './components/CurrentValuesPanel'
@@ -34,9 +42,21 @@ import { ScalePanel } from './components/ScalePanel'
 import { TrendRangeNavigator } from './components/TrendRangeNavigator'
 import { TrendToolbar } from './components/TrendToolbar'
 import { VariablesPanel } from './components/VariablesPanel'
-import { TIME_RANGES, nowLocalInput } from './constants'
+import {
+  TIME_RANGES,
+  applyVariableDisplayValue,
+  getTrendVariableLabel,
+  getVariableDisplayUnit,
+  getWagoIoTrendVariableDisplayValue,
+  getWagoIoTrendVariableDisplayUnit,
+  getWagoIoTrendVariableMeta,
+  nowLocalInput,
+  type TrendVariableId,
+  type WagoIoTrendVariableId
+} from './constants'
 import { useTrendScreenState } from './hooks/useTrendScreenState'
 import * as S from './TrendScreen.styles'
+import type { CurrentValueItem } from './types'
 
 type ImageMimeType = 'image/png' | 'image/jpeg'
 
@@ -133,6 +153,11 @@ type ReportReadyDataset = Dataset & {
   label?: string
 }
 
+type RecordedSensorDataset = Dataset & {
+  parameterId: TrendVariableId
+  scope: 1 | 2
+}
+
 const getFastApiErrorDetail = (error: unknown): string | null => {
   if (!isAxiosErrorLike(error)) return null
 
@@ -220,11 +245,82 @@ const buildWorkbookSheet = (
     .filter((series): series is TrendReportWorkbookSeries => Boolean(series))
 })
 
+const decorateRecordedSensorDatasets = (
+  datasets: RecordedSensorDataset[],
+  {
+    displayNameOverrides,
+    temperatureUnit,
+    labelPrefix,
+    getEffectiveSensorColor
+  }: {
+    displayNameOverrides: Record<string, string>
+    temperatureUnit: 'celsius' | 'fahrenheit'
+    labelPrefix?: string
+    getEffectiveSensorColor: (id: TrendVariableId) => string
+  }
+): ReportReadyDataset[] =>
+  datasets.map((dataset) => {
+    const meta = getWagoIoTrendVariableMeta(dataset.parameterId)
+    const adjustedData = meta
+      ? dataset.data.map((point) => ({
+          ...point,
+          y: getWagoIoTrendVariableDisplayValue(
+            dataset.parameterId as WagoIoTrendVariableId,
+            point.y,
+            temperatureUnit
+          )
+        }))
+      : dataset.data.map((point) => ({
+          ...point,
+          y: applyVariableDisplayValue(dataset.parameterId as ParameterId, point.y, temperatureUnit)
+        }))
+
+    const baseLabel = getTrendVariableLabel(dataset.parameterId, displayNameOverrides)
+
+    return {
+      ...dataset,
+      data: adjustedData,
+      label: labelPrefix ? `${labelPrefix} - ${baseLabel}` : baseLabel,
+      unit: meta
+        ? getWagoIoTrendVariableDisplayUnit(
+            dataset.parameterId as WagoIoTrendVariableId,
+            temperatureUnit
+          ) || dataset.unit || null
+        : getVariableDisplayUnit(
+            dataset.parameterId as ParameterId,
+            dataset.unit || null,
+            temperatureUnit
+          ),
+      borderColor: getEffectiveSensorColor(dataset.parameterId)
+    }
+  })
+
+const buildCurrentValueItems = (datasets: Dataset[]): CurrentValueItem[] =>
+  datasets.map((dataset) => ({
+    id:
+      dataset.label ||
+      ('parameterId' in dataset && typeof dataset.parameterId === 'string'
+        ? dataset.parameterId
+        : 'manual'),
+    label:
+      dataset.label ||
+      ('parameterId' in dataset && typeof dataset.parameterId === 'string'
+        ? dataset.parameterId
+        : 'manual'),
+    color: dataset.borderColor,
+    value: dataset.data.length > 0 ? dataset.data[dataset.data.length - 1].y : 0,
+    unit: dataset.unit ?? null,
+    isManual: dataset.isManual === true
+  }))
+
 const TrendScreen = () => {
   void useTheme()
   const { isViewOnly } = useAccessMode()
   const isMobileViewOnly = isViewOnly && useIsViewportBelow(768)
   const [motorControlMode] = useMotorControlModePreference()
+  const singleMotorScope = usePreferredSingleMotorScope()
+  const [temperatureUnit] = useTemperatureUnitPreference()
+  const displayNameOverrides = useWagoDisplayNameOverrides()
   const perfEnabled = isDebugEnabled('trend.perf')
   const {
     timeRange,
@@ -249,12 +345,12 @@ const TrendScreen = () => {
     setIsScalePanelOpen,
     selectedVarIds,
     handleToggleVar,
-    combinedDatasets,
-    motorOneCombinedDatasets,
-    motorTwoCombinedDatasets,
-    combinedXDomain,
-    currentValues,
-    currentValuesByMotor,
+    combinedDatasets: previewCombinedDatasets,
+    motorOneCombinedDatasets: previewMotorOneCombinedDatasets,
+    motorTwoCombinedDatasets: previewMotorTwoCombinedDatasets,
+    combinedXDomain: previewCombinedXDomain,
+    currentValues: previewCurrentValues,
+    currentValuesByMotor: previewCurrentValuesByMotor,
     trendColorPalette,
     getEffectiveSensorColor,
     getEffectiveManualColor,
@@ -301,6 +397,21 @@ const TrendScreen = () => {
     excelSampleIntervalUnit,
     setExcelSampleIntervalUnit
   } = useTrendScreenState()
+  const {
+    status: recordingStatus,
+    startedAt: recordingStartedAt,
+    stoppedAt: recordingStoppedAt,
+    sessionXDomain,
+    hasRecordedSession,
+    hasRecordedPoints,
+    setTrackedSensorIds,
+    startRecording,
+    stopRecording,
+    motorOneDatasets,
+    motorTwoDatasets,
+    motorOneDatasetsAll,
+    motorTwoDatasetsAll
+  } = useTrendRecording()
 
   const selectedCount = selectedVarIds.length + selectedManualIds.length
   const isDualMotorMode = motorControlMode === 'dual'
@@ -314,6 +425,190 @@ const TrendScreen = () => {
   const exportResolveRef = useRef<((value: string | null) => void) | null>(null)
   const renderStartRef = useRef<number>(perfNow())
   renderStartRef.current = perfNow()
+
+  const previewManualDatasets = useMemo(
+    () => previewCombinedDatasets.filter((dataset) => dataset.isManual === true),
+    [previewCombinedDatasets]
+  )
+  const previewManualDatasetsByMotor = useMemo(
+    () => previewMotorOneCombinedDatasets.filter((dataset) => dataset.isManual === true),
+    [previewMotorOneCombinedDatasets]
+  )
+
+  useEffect(() => {
+    setTrackedSensorIds(selectedVarIds)
+  }, [selectedVarIds, setTrackedSensorIds])
+
+  const handleToggleRecording = useCallback(() => {
+    if (recordingStatus === 'recording') {
+      stopRecording()
+      return
+    }
+
+    startRecording(selectedVarIds)
+    setZoomXDomain(null)
+  }, [recordingStatus, selectedVarIds, startRecording, stopRecording])
+
+  const recordedMotorOneDatasets = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(motorOneDatasets, {
+        displayNameOverrides,
+        temperatureUnit,
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, motorOneDatasets, temperatureUnit]
+  )
+
+  const recordedMotorTwoDatasets = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(motorTwoDatasets, {
+        displayNameOverrides,
+        temperatureUnit,
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, motorTwoDatasets, temperatureUnit]
+  )
+
+  const recordedMotorOneDatasetsAll = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(motorOneDatasetsAll, {
+        displayNameOverrides,
+        temperatureUnit,
+        labelPrefix: 'Motor #1',
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, motorOneDatasetsAll, temperatureUnit]
+  )
+
+  const recordedMotorTwoDatasetsAll = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(motorTwoDatasetsAll, {
+        displayNameOverrides,
+        temperatureUnit,
+        labelPrefix: 'Motor #2',
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, motorTwoDatasetsAll, temperatureUnit]
+  )
+
+  const showRecordedSession = hasRecordedSession
+
+  const motorOneCombinedDatasets = useMemo(
+    () =>
+      showRecordedSession
+        ? [...recordedMotorOneDatasets, ...previewManualDatasetsByMotor]
+        : previewMotorOneCombinedDatasets,
+    [
+      previewManualDatasetsByMotor,
+      previewMotorOneCombinedDatasets,
+      recordedMotorOneDatasets,
+      showRecordedSession
+    ]
+  )
+
+  const motorTwoCombinedDatasets = useMemo(
+    () =>
+      showRecordedSession
+        ? [...recordedMotorTwoDatasets, ...previewManualDatasetsByMotor]
+        : previewMotorTwoCombinedDatasets,
+    [
+      previewManualDatasetsByMotor,
+      previewMotorTwoCombinedDatasets,
+      recordedMotorTwoDatasets,
+      showRecordedSession
+    ]
+  )
+
+  const combinedDatasets = useMemo(
+    () =>
+      showRecordedSession
+        ? isDualMotorMode
+          ? [
+              ...recordedMotorOneDatasetsAll,
+              ...recordedMotorTwoDatasetsAll,
+              ...previewManualDatasets
+            ]
+          : singleMotorScope === 2
+            ? motorTwoCombinedDatasets
+            : motorOneCombinedDatasets
+        : previewCombinedDatasets,
+    [
+      isDualMotorMode,
+      motorOneCombinedDatasets,
+      motorTwoCombinedDatasets,
+      previewCombinedDatasets,
+      previewManualDatasets,
+      recordedMotorOneDatasetsAll,
+      recordedMotorTwoDatasetsAll,
+      showRecordedSession,
+      singleMotorScope
+    ]
+  )
+
+  const combinedXDomain = useMemo(
+    () => (showRecordedSession ? sessionXDomain : previewCombinedXDomain),
+    [previewCombinedXDomain, sessionXDomain, showRecordedSession]
+  )
+
+  const currentValues = useMemo(
+    () => (showRecordedSession ? buildCurrentValueItems(combinedDatasets) : previewCurrentValues),
+    [combinedDatasets, previewCurrentValues, showRecordedSession]
+  )
+
+  const currentValuesByMotor = useMemo(
+    () =>
+      showRecordedSession
+        ? {
+            1: buildCurrentValueItems(motorOneCombinedDatasets),
+            2: buildCurrentValueItems(motorTwoCombinedDatasets)
+          }
+        : previewCurrentValuesByMotor,
+    [
+      motorOneCombinedDatasets,
+      motorTwoCombinedDatasets,
+      previewCurrentValuesByMotor,
+      showRecordedSession
+    ]
+  )
+
+  const reportDatasets = useMemo<ReportReadyDataset[]>(
+    () =>
+      showRecordedSession
+        ? [...recordedMotorOneDatasetsAll, ...recordedMotorTwoDatasetsAll, ...previewManualDatasets]
+        : (combinedDatasets as ReportReadyDataset[]),
+    [
+      combinedDatasets,
+      previewManualDatasets,
+      recordedMotorOneDatasetsAll,
+      recordedMotorTwoDatasetsAll,
+      showRecordedSession
+    ]
+  )
+  const reportIsDual = useMemo(
+    () =>
+      showRecordedSession
+        ? recordedMotorTwoDatasetsAll.some((dataset) => dataset.data.length > 0)
+        : isDualMotorMode,
+    [isDualMotorMode, recordedMotorTwoDatasetsAll, showRecordedSession]
+  )
+
+  const recordingStatusTone = showRecordedSession
+    ? recordingStatus === 'recording'
+      ? 'recording'
+      : 'stopped'
+    : 'warning'
+
+  const recordingStatusMessage = showRecordedSession
+    ? recordingStatus === 'recording'
+      ? 'Recording in progress. Data will keep recording even if you leave this screen.'
+      : 'Recording stopped. Reports and Excel exports use the recorded session shown here.'
+    : 'Recording not started yet. The chart below is only a live preview until you press Start Recording Data.'
+
+  const recordingStatusMeta = showRecordedSession
+    ? `Session start: ${new Date((recordingStartedAt ?? Date.now() / 1000) * 1000).toLocaleString()}`
+    : selectedVarIds.length > 0
+      ? `${selectedVarIds.length} live variable${selectedVarIds.length === 1 ? '' : 's'} selected`
+      : 'Select at least one variable, then press Start Recording Data.'
 
   const closeAllPanels = useCallback(() => {
     setIsConfigOpen(false)
@@ -692,11 +987,19 @@ const TrendScreen = () => {
   )
 
   const handleSendReport = useCallback(async (): Promise<SendReportResult> => {
-    if (!combinedXDomain) return { ok: false, message: 'No valid range for sending the report' }
+    if (!showRecordedSession || !recordingStartedAt) {
+      return {
+        ok: false,
+        message: 'Start recording data first. Reports and Excel exports now use recorded sessions only.'
+      }
+    }
+    if (showRecordedSession && !hasRecordedPoints) {
+      return { ok: false, message: 'Recording started, but no recorded points are available yet' }
+    }
     if (!emailList.length) return { ok: false, message: 'Add at least one recipient' }
 
-    const startSec = combinedXDomain.min
-    const endSec = combinedXDomain.max
+    const startSec = recordingStartedAt
+    const endSec = recordingStoppedAt ?? Date.now() / 1000
 
     const startIso = new Date(startSec * 1000).toISOString()
     const endIso = new Date(endSec * 1000).toISOString()
@@ -710,10 +1013,10 @@ const TrendScreen = () => {
 
     setIsSending(true)
     try {
-      const clientMotorInfo: ClientMotorInfo | undefined = isDualMotorMode
+      const clientMotorInfo: ClientMotorInfo | undefined = reportIsDual
         ? undefined
         : loadClientMotorInfo()
-      const dualClientMotorInfo: DualClientMotorInfo | undefined = isDualMotorMode
+      const dualClientMotorInfo: DualClientMotorInfo | undefined = reportIsDual
         ? loadDualClientMotorInfo()
         : undefined
 
@@ -725,7 +1028,7 @@ const TrendScreen = () => {
           value: excelSampleIntervalValue,
           unit: excelSampleIntervalUnit
         },
-        datasets: combinedDatasets.map((d) => ({
+        datasets: reportDatasets.map((d) => ({
           label: d.label,
           points: d.data?.length ?? 0,
           isManual: d.isManual,
@@ -734,7 +1037,7 @@ const TrendScreen = () => {
       })
 
       const series: TrendReportSeries[] = []
-      combinedDatasets.forEach((ds) => {
+      reportDatasets.forEach((ds) => {
         const parameterId = (ds as unknown as { parameterId?: string }).parameterId
         const label = ds.label || parameterId || 'Series'
         const unit = ds.unit ?? null
@@ -750,29 +1053,53 @@ const TrendScreen = () => {
         series.push({ kind: 'sensor', parameterId, label, unit })
       })
 
-      const workbookSheets: TrendReportWorkbookSheet[] = isDualMotorMode
-        ? [
-            buildWorkbookSheet(
-              'Motor #1 Trend',
-              motorOneCombinedDatasets as ReportReadyDataset[],
-              startSec,
-              endSec
-            ),
-            buildWorkbookSheet(
-              'Motor #2 Trend',
-              motorTwoCombinedDatasets as ReportReadyDataset[],
-              startSec,
-              endSec
-            )
-          ]
-        : [
-            buildWorkbookSheet(
-              'Trend Report',
-              combinedDatasets as ReportReadyDataset[],
-              startSec,
-              endSec
-            )
-          ]
+      const workbookSheets: TrendReportWorkbookSheet[] = showRecordedSession
+        ? reportIsDual
+          ? [
+              buildWorkbookSheet(
+                'Motor #1 Trend',
+                [...recordedMotorOneDatasetsAll, ...previewManualDatasets] as ReportReadyDataset[],
+                startSec,
+                endSec
+              ),
+              buildWorkbookSheet(
+                'Motor #2 Trend',
+                [...recordedMotorTwoDatasetsAll, ...previewManualDatasets] as ReportReadyDataset[],
+                startSec,
+                endSec
+              )
+            ]
+          : [
+              buildWorkbookSheet(
+                'Trend Report',
+                [...recordedMotorOneDatasetsAll, ...previewManualDatasets] as ReportReadyDataset[],
+                startSec,
+                endSec
+              )
+            ]
+        : isDualMotorMode
+          ? [
+              buildWorkbookSheet(
+                'Motor #1 Trend',
+                motorOneCombinedDatasets as ReportReadyDataset[],
+                startSec,
+                endSec
+              ),
+              buildWorkbookSheet(
+                'Motor #2 Trend',
+                motorTwoCombinedDatasets as ReportReadyDataset[],
+                startSec,
+                endSec
+              )
+            ]
+          : [
+              buildWorkbookSheet(
+                'Trend Report',
+                combinedDatasets as ReportReadyDataset[],
+                startSec,
+                endSec
+              )
+            ]
 
       const images: Array<{ filename: string; mimeType: ImageMimeType; contentBase64: string }> = []
 
@@ -781,11 +1108,11 @@ const TrendScreen = () => {
       )
 
       const globalDataUrl =
-        (!zoomXDomain && !isDualMotorMode
+        (!zoomXDomain && !isDualMotorMode && !showRecordedSession
           ? chartRef.current?.exportImage({ type: 'image/png' })
           : null) ??
         (await exportChartHidden({
-          datasets: combinedDatasets,
+          datasets: reportDatasets,
           width: 1500,
           height: 600,
           xMin: startSec,
@@ -806,7 +1133,7 @@ const TrendScreen = () => {
         console.debug('[report.send] global image export failed')
       }
 
-      for (const ds of combinedDatasets) {
+      for (const ds of reportDatasets) {
         const label = ds.label || 'Series'
         const unitLabel = ds.unit ? ` (${ds.unit})` : ''
         const kindLabel = ds.isManual === true ? 'Manual' : 'Sensor'
@@ -897,20 +1224,28 @@ const TrendScreen = () => {
     }
   }, [
     combinedDatasets,
-    combinedXDomain,
     emailList,
     excelSampleIntervalUnit,
     excelSampleIntervalValue,
+    exportChartHidden,
+    hasRecordedPoints,
     isDualMotorMode,
     motorOneCombinedDatasets,
     motorTwoCombinedDatasets,
+    previewManualDatasets,
     privateMode,
+    recordedMotorOneDatasetsAll,
+    recordedMotorTwoDatasetsAll,
+    recordingStartedAt,
+    recordingStoppedAt,
+    reportDatasets,
+    reportIsDual,
     reportNote,
     reportSubject,
     resolvedYAxisScale,
+    setIsSending,
+    showRecordedSession,
     zoomXDomain,
-    exportChartHidden,
-    setIsSending
   ])
 
   const renderTrendChartCanvas = (
@@ -1151,6 +1486,9 @@ const TrendScreen = () => {
               onToggleCurrentValues={() => toggleExclusivePanel('currentValues')}
               isReportOpen={isReportOpen}
               onToggleReport={() => toggleExclusivePanel('report')}
+              isRecording={recordingStatus === 'recording'}
+              onToggleRecording={handleToggleRecording}
+              recordingDisabled={isViewOnly || (recordingStatus !== 'recording' && selectedVarIds.length === 0)}
             />
 
             <S.ContentArea>
@@ -1163,6 +1501,13 @@ const TrendScreen = () => {
                   isCurrentValuesOpen
                 }
               >
+                <S.RecordingStatusBar $tone={recordingStatusTone}>
+                  <S.RecordingStatusText $tone={recordingStatusTone}>
+                    {recordingStatusMessage}
+                  </S.RecordingStatusText>
+                  <S.RecordingStatusMeta>{recordingStatusMeta}</S.RecordingStatusMeta>
+                </S.RecordingStatusBar>
+
                 <TrendRangeNavigator
                   datasets={combinedDatasets}
                   fullDomain={combinedXDomain}

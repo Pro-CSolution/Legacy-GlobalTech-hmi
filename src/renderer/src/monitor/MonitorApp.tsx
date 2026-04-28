@@ -5,6 +5,7 @@ import { GlobalStyles } from '../styles/GlobalStyles'
 import { AccessModeProvider } from '../contexts/AccessModeContext'
 import { RealtimeProvider } from '../contexts/RealtimeContext'
 import { TopBannerNoticeProvider } from '../contexts/TopBannerNoticeContext'
+import { TrendRecordingProvider } from '../contexts/TrendRecordingContext'
 import { useMultiTouchGuard, useTemperatureAlarmMonitor } from '../hooks'
 import { monitorRouter } from './router'
 
@@ -21,9 +22,11 @@ const MonitorApp = () => {
       <ThemeProvider theme={theme}>
         <GlobalStyles />
         <RealtimeProvider>
-          <TopBannerNoticeProvider>
-            <MonitorAppContent />
-          </TopBannerNoticeProvider>
+          <TrendRecordingProvider>
+            <TopBannerNoticeProvider>
+              <MonitorAppContent />
+            </TopBannerNoticeProvider>
+          </TrendRecordingProvider>
         </RealtimeProvider>
       </ThemeProvider>
     </AccessModeProvider>
