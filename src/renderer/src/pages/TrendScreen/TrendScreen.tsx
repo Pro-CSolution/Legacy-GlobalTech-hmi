@@ -22,7 +22,6 @@ import type {
 } from 'services'
 import { runReportSend } from 'hooks/useReportSendStatus'
 import { useMotorControlModePreference } from 'hooks/useMotorControlModePreference'
-import { usePreferredSingleMotorScope } from 'hooks/usePreferredSingleMotorScope'
 import {
   useAccessMode,
   useIsViewportBelow,
@@ -56,7 +55,6 @@ import {
 } from './constants'
 import { useTrendScreenState } from './hooks/useTrendScreenState'
 import * as S from './TrendScreen.styles'
-import type { CurrentValueItem } from './types'
 
 type ImageMimeType = 'image/png' | 'image/jpeg'
 
@@ -295,30 +293,11 @@ const decorateRecordedSensorDatasets = (
     }
   })
 
-const buildCurrentValueItems = (datasets: Dataset[]): CurrentValueItem[] =>
-  datasets.map((dataset) => ({
-    id:
-      dataset.label ||
-      ('parameterId' in dataset && typeof dataset.parameterId === 'string'
-        ? dataset.parameterId
-        : 'manual'),
-    label:
-      dataset.label ||
-      ('parameterId' in dataset && typeof dataset.parameterId === 'string'
-        ? dataset.parameterId
-        : 'manual'),
-    color: dataset.borderColor,
-    value: dataset.data.length > 0 ? dataset.data[dataset.data.length - 1].y : 0,
-    unit: dataset.unit ?? null,
-    isManual: dataset.isManual === true
-  }))
-
 const TrendScreen = () => {
   void useTheme()
   const { isViewOnly } = useAccessMode()
   const isMobileViewOnly = isViewOnly && useIsViewportBelow(768)
   const [motorControlMode] = useMotorControlModePreference()
-  const singleMotorScope = usePreferredSingleMotorScope()
   const [temperatureUnit] = useTemperatureUnitPreference()
   const displayNameOverrides = useWagoDisplayNameOverrides()
   const perfEnabled = isDebugEnabled('trend.perf')
@@ -401,14 +380,11 @@ const TrendScreen = () => {
     status: recordingStatus,
     startedAt: recordingStartedAt,
     stoppedAt: recordingStoppedAt,
-    sessionXDomain,
     hasRecordedSession,
     hasRecordedPoints,
     setTrackedSensorIds,
     startRecording,
     stopRecording,
-    motorOneDatasets,
-    motorTwoDatasets,
     motorOneDatasetsAll,
     motorTwoDatasetsAll
   } = useTrendRecording()
@@ -430,10 +406,6 @@ const TrendScreen = () => {
     () => previewCombinedDatasets.filter((dataset) => dataset.isManual === true),
     [previewCombinedDatasets]
   )
-  const previewManualDatasetsByMotor = useMemo(
-    () => previewMotorOneCombinedDatasets.filter((dataset) => dataset.isManual === true),
-    [previewMotorOneCombinedDatasets]
-  )
 
   useEffect(() => {
     setTrackedSensorIds(selectedVarIds)
@@ -448,26 +420,6 @@ const TrendScreen = () => {
     startRecording(selectedVarIds)
     setZoomXDomain(null)
   }, [recordingStatus, selectedVarIds, startRecording, stopRecording])
-
-  const recordedMotorOneDatasets = useMemo(
-    () =>
-      decorateRecordedSensorDatasets(motorOneDatasets, {
-        displayNameOverrides,
-        temperatureUnit,
-        getEffectiveSensorColor
-      }),
-    [displayNameOverrides, getEffectiveSensorColor, motorOneDatasets, temperatureUnit]
-  )
-
-  const recordedMotorTwoDatasets = useMemo(
-    () =>
-      decorateRecordedSensorDatasets(motorTwoDatasets, {
-        displayNameOverrides,
-        temperatureUnit,
-        getEffectiveSensorColor
-      }),
-    [displayNameOverrides, getEffectiveSensorColor, motorTwoDatasets, temperatureUnit]
-  )
 
   const recordedMotorOneDatasetsAll = useMemo(
     () =>
@@ -492,84 +444,16 @@ const TrendScreen = () => {
   )
 
   const showRecordedSession = hasRecordedSession
+  const isRecordingActive = recordingStatus === 'recording'
 
-  const motorOneCombinedDatasets = useMemo(
-    () =>
-      showRecordedSession
-        ? [...recordedMotorOneDatasets, ...previewManualDatasetsByMotor]
-        : previewMotorOneCombinedDatasets,
-    [
-      previewManualDatasetsByMotor,
-      previewMotorOneCombinedDatasets,
-      recordedMotorOneDatasets,
-      showRecordedSession
-    ]
-  )
-
-  const motorTwoCombinedDatasets = useMemo(
-    () =>
-      showRecordedSession
-        ? [...recordedMotorTwoDatasets, ...previewManualDatasetsByMotor]
-        : previewMotorTwoCombinedDatasets,
-    [
-      previewManualDatasetsByMotor,
-      previewMotorTwoCombinedDatasets,
-      recordedMotorTwoDatasets,
-      showRecordedSession
-    ]
-  )
-
-  const combinedDatasets = useMemo(
-    () =>
-      showRecordedSession
-        ? isDualMotorMode
-          ? [
-              ...recordedMotorOneDatasetsAll,
-              ...recordedMotorTwoDatasetsAll,
-              ...previewManualDatasets
-            ]
-          : singleMotorScope === 2
-            ? motorTwoCombinedDatasets
-            : motorOneCombinedDatasets
-        : previewCombinedDatasets,
-    [
-      isDualMotorMode,
-      motorOneCombinedDatasets,
-      motorTwoCombinedDatasets,
-      previewCombinedDatasets,
-      previewManualDatasets,
-      recordedMotorOneDatasetsAll,
-      recordedMotorTwoDatasetsAll,
-      showRecordedSession,
-      singleMotorScope
-    ]
-  )
-
-  const combinedXDomain = useMemo(
-    () => (showRecordedSession ? sessionXDomain : previewCombinedXDomain),
-    [previewCombinedXDomain, sessionXDomain, showRecordedSession]
-  )
-
-  const currentValues = useMemo(
-    () => (showRecordedSession ? buildCurrentValueItems(combinedDatasets) : previewCurrentValues),
-    [combinedDatasets, previewCurrentValues, showRecordedSession]
-  )
-
-  const currentValuesByMotor = useMemo(
-    () =>
-      showRecordedSession
-        ? {
-            1: buildCurrentValueItems(motorOneCombinedDatasets),
-            2: buildCurrentValueItems(motorTwoCombinedDatasets)
-          }
-        : previewCurrentValuesByMotor,
-    [
-      motorOneCombinedDatasets,
-      motorTwoCombinedDatasets,
-      previewCurrentValuesByMotor,
-      showRecordedSession
-    ]
-  )
+  // Keep the on-screen charts on the live-preview pipeline so the trend never
+  // blanks on start and resumes live movement immediately after stop.
+  const motorOneCombinedDatasets = previewMotorOneCombinedDatasets
+  const motorTwoCombinedDatasets = previewMotorTwoCombinedDatasets
+  const combinedDatasets = previewCombinedDatasets
+  const combinedXDomain = previewCombinedXDomain
+  const currentValues = previewCurrentValues
+  const currentValuesByMotor = previewCurrentValuesByMotor
 
   const reportDatasets = useMemo<ReportReadyDataset[]>(
     () =>
@@ -593,19 +477,21 @@ const TrendScreen = () => {
   )
 
   const recordingStatusTone = showRecordedSession
-    ? recordingStatus === 'recording'
+    ? isRecordingActive
       ? 'recording'
       : 'stopped'
     : 'warning'
 
   const recordingStatusMessage = showRecordedSession
-    ? recordingStatus === 'recording'
-      ? 'Recording in progress. Data will keep recording even if you leave this screen.'
-      : 'Recording stopped. Reports and Excel exports use the recorded session shown here.'
+    ? isRecordingActive
+      ? 'Recording in progress. The live preview below is being captured even if you leave this screen.'
+      : 'Recording stopped. Live preview continues below, and reports/Excel use the last recorded session.'
     : 'Recording not started yet. The chart below is only a live preview until you press Start Recording Data.'
 
   const recordingStatusMeta = showRecordedSession
-    ? `Session start: ${new Date((recordingStartedAt ?? Date.now() / 1000) * 1000).toLocaleString()}`
+    ? isRecordingActive
+      ? `Session start: ${new Date((recordingStartedAt ?? Date.now() / 1000) * 1000).toLocaleString()}`
+      : `Recorded session: ${new Date((recordingStartedAt ?? Date.now() / 1000) * 1000).toLocaleString()} to ${new Date((recordingStoppedAt ?? Date.now() / 1000) * 1000).toLocaleString()}`
     : selectedVarIds.length > 0
       ? `${selectedVarIds.length} live variable${selectedVarIds.length === 1 ? '' : 's'} selected`
       : 'Select at least one variable, then press Start Recording Data.'
