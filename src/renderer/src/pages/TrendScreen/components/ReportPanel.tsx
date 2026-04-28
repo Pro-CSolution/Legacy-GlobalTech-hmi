@@ -16,6 +16,11 @@ import { useTheme } from 'styled-components'
 import VirtualKeyboard from 'components/VirtualKeyboard/VirtualKeyboard'
 import styled from 'styled-components'
 import * as S from '../TrendScreen.styles'
+import {
+  EXCEL_SAMPLE_INTERVAL_UNITS,
+  EXCEL_SAMPLE_INTERVAL_VALUE_OPTIONS,
+  type ExcelSampleIntervalUnit
+} from '../constants'
 
 type TabType = 'recipients' | 'content' | 'options'
 
@@ -140,6 +145,39 @@ const RemoveButton = styled.button`
   }
 `
 
+const SelectRow = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 8px;
+`
+
+const SelectInput = styled.select`
+  min-height: 52px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background: ${({ theme }) => theme.colors.background.primary};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.background.tertiary};
+  }
+
+  &:focus {
+    border-color: ${({ theme }) => theme.colors.accent.primary};
+  }
+`
+
+const OptionDescription = styled.div`
+  font-size: 11px;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  line-height: 1.35;
+`
+
 type Props = {
   isOpen: boolean
   onClose: () => void
@@ -158,6 +196,11 @@ type Props = {
   onChangeNote: (value: string) => void
   privateMode: boolean
   onTogglePrivateMode: () => void
+  excelSampleIntervalValue: number
+  onChangeExcelSampleIntervalValue: (value: number) => void
+  excelSampleIntervalUnit: ExcelSampleIntervalUnit
+  onChangeExcelSampleIntervalUnit: (value: ExcelSampleIntervalUnit) => void
+  readOnly?: boolean
 }
 
 export const ReportPanel = ({
@@ -177,7 +220,12 @@ export const ReportPanel = ({
   note,
   onChangeNote,
   privateMode,
-  onTogglePrivateMode
+  onTogglePrivateMode,
+  excelSampleIntervalValue,
+  onChangeExcelSampleIntervalValue,
+  excelSampleIntervalUnit,
+  onChangeExcelSampleIntervalUnit,
+  readOnly = false
 }: Props) => {
   const theme = useTheme()
   const [activeTab, setActiveTab] = useState<TabType>('recipients')
@@ -240,6 +288,7 @@ export const ReportPanel = ({
   }, [maxPage, page])
 
   const openKeyboard = (field: 'newEmail' | 'subject' | 'note') => {
+    if (readOnly) return
     setKbField(field)
     setKbInitial(field === 'newEmail' ? newEmail : field === 'subject' ? subject : note)
     setKbVisible(true)
@@ -316,7 +365,9 @@ export const ReportPanel = ({
       {activeTab === 'recipients' && (
         <>
           <div style={{ fontSize: '16px', color: theme.colors.text.secondary, lineHeight: '1.4' }}>
-            Add recipients for this report. Use the arrows to scroll the list.
+            {readOnly
+              ? 'Recipients configured for this report. View only mode does not allow editing or sending.'
+              : 'Add recipients for this report. Use the arrows to scroll the list.'}
           </div>
 
           <S.CategoryTitle>Recipients</S.CategoryTitle>
@@ -329,9 +380,11 @@ export const ReportPanel = ({
             {pagedEmails.map((email) => (
               <EmailItem key={email}>
                 <span>{email}</span>
-                <RemoveButton onClick={() => onRemoveEmail(email)}>
-                  <X size={16} />
-                </RemoveButton>
+                {readOnly ? null : (
+                  <RemoveButton onClick={() => onRemoveEmail(email)}>
+                    <X size={16} />
+                  </RemoveButton>
+                )}
               </EmailItem>
             ))}
           </S.EmailList>
@@ -355,25 +408,29 @@ export const ReportPanel = ({
             </S.ActionButton>
           </FooterRow>
 
-          <S.CategoryTitle>Add</S.CategoryTitle>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <LargeInput
-              type="text"
-              placeholder="new@email.com"
-              value={newEmail}
-              readOnly
-              $invalid={showInvalid}
-              onClick={() => openKeyboard('newEmail')}
-            />
-            <S.ActionButton onClick={onAddEmail} disabled={!canAdd} style={{ minWidth: 56 }}>
-              <Plus size={16} />
-            </S.ActionButton>
-          </div>
+          {readOnly ? null : (
+            <>
+              <S.CategoryTitle>Add</S.CategoryTitle>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <LargeInput
+                  type="text"
+                  placeholder="new@email.com"
+                  value={newEmail}
+                  readOnly
+                  $invalid={showInvalid}
+                  onClick={() => openKeyboard('newEmail')}
+                />
+                <S.ActionButton onClick={onAddEmail} disabled={!canAdd} style={{ minWidth: 56 }}>
+                  <Plus size={16} />
+                </S.ActionButton>
+              </div>
 
-          {showInvalid && (
-            <div style={{ fontSize: '11px', color: theme.colors.status.alarm }}>
-              {emailError || 'Invalid email'}
-            </div>
+              {showInvalid && (
+                <div style={{ fontSize: '11px', color: theme.colors.status.alarm }}>
+                  {emailError || 'Invalid email'}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -381,7 +438,9 @@ export const ReportPanel = ({
       {activeTab === 'content' && (
         <>
           <div style={{ fontSize: '16px', color: theme.colors.text.secondary, lineHeight: '1.4' }}>
-            Configure the email subject and an optional note.
+            {readOnly
+              ? 'Report content is shown for review only.'
+              : 'Configure the email subject and an optional note.'}
           </div>
 
           <S.CategoryTitle>Subject</S.CategoryTitle>
@@ -407,8 +466,40 @@ export const ReportPanel = ({
       {activeTab === 'options' && (
         <>
           <div style={{ fontSize: '16px', color: theme.colors.text.secondary, lineHeight: '1.4' }}>
-            Delivery options for this report.
+            {readOnly ? 'Delivery options are shown for review only.' : 'Delivery options for this report.'}
           </div>
+
+          <S.CategoryTitle>Excel sample interval</S.CategoryTitle>
+          <OptionDescription>
+            This only changes the Excel report spacing. The live trend and report images stay the same.
+          </OptionDescription>
+          <SelectRow>
+            <SelectInput
+              value={excelSampleIntervalValue.toString()}
+              onChange={(event) => onChangeExcelSampleIntervalValue(Number(event.target.value))}
+              disabled={readOnly}
+            >
+              {EXCEL_SAMPLE_INTERVAL_VALUE_OPTIONS.map((option) => (
+                <option key={option} value={option.toString()}>
+                  {option}
+                </option>
+              ))}
+            </SelectInput>
+
+            <SelectInput
+              value={excelSampleIntervalUnit}
+              onChange={(event) =>
+                onChangeExcelSampleIntervalUnit(event.target.value as ExcelSampleIntervalUnit)
+              }
+              disabled={readOnly}
+            >
+              {EXCEL_SAMPLE_INTERVAL_UNITS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </SelectInput>
+          </SelectRow>
 
           <S.CategoryTitle>Private mode</S.CategoryTitle>
           <div
@@ -434,6 +525,7 @@ export const ReportPanel = ({
             <S.ActionButton
               $variant={privateMode ? 'success' : 'secondary'}
               onClick={onTogglePrivateMode}
+              disabled={readOnly}
               style={{ minWidth: 90, justifyContent: 'center' }}
             >
               {privateMode ? 'ON' : 'OFF'}
@@ -444,34 +536,53 @@ export const ReportPanel = ({
 
       {toast && <S.Toast $tone={toast.tone}>{toast.message}</S.Toast>}
 
-      <S.ActionButton
-        $variant="success"
-        style={{
-          marginTop: 'auto',
-          justifyContent: 'center',
-          padding: '12px',
-          background: isSuccess ? theme.colors.status.running : undefined
-        }}
-        onClick={handleSend}
-        disabled={isSending || isSuccess}
-      >
-        {isSending ? (
-          <>
-            <RefreshCcw size={16} className="animate-spin" />
-            <span>SENDING...</span>
-          </>
-        ) : isSuccess ? (
-          <>
-            <Check size={16} />
-            <span>SENT SUCCESSFULLY</span>
-          </>
-        ) : (
-          <>
-            <Send size={16} />
-            <span>SEND REPORT</span>
-          </>
-        )}
-      </S.ActionButton>
+      {readOnly ? (
+        <div
+          style={{
+            marginTop: 'auto',
+            padding: '12px',
+            borderRadius: 10,
+            border: `1px solid ${theme.colors.borders.primary}`,
+            background: theme.colors.background.primary,
+            color: theme.colors.text.secondary,
+            fontSize: 12,
+            lineHeight: 1.45,
+            textTransform: 'uppercase',
+            letterSpacing: '0.08em'
+          }}
+        >
+          Send report controls are disabled in view only mode.
+        </div>
+      ) : (
+        <S.ActionButton
+          $variant="success"
+          style={{
+            marginTop: 'auto',
+            justifyContent: 'center',
+            padding: '12px',
+            background: isSuccess ? theme.colors.status.running : undefined
+          }}
+          onClick={handleSend}
+          disabled={isSending || isSuccess}
+        >
+          {isSending ? (
+            <>
+              <RefreshCcw size={16} className="animate-spin" />
+              <span>SENDING...</span>
+            </>
+          ) : isSuccess ? (
+            <>
+              <Check size={16} />
+              <span>SENT SUCCESSFULLY</span>
+            </>
+          ) : (
+            <>
+              <Send size={16} />
+              <span>SEND REPORT</span>
+            </>
+          )}
+        </S.ActionButton>
+      )}
 
       <VirtualKeyboard
         visible={kbVisible}

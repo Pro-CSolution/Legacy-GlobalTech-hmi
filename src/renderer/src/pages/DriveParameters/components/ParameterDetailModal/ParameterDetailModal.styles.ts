@@ -184,6 +184,38 @@ export const FakeInput = styled.button<{ $disabled?: boolean }>`
   }
 `
 
+export const SelectInput = styled.select`
+  width: 100%;
+  padding: 12px;
+  background: ${({ theme }) => theme.colors.background.secondary};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: ${({ theme }) => theme.typography.sizes.lg};
+
+  &:hover:not(:disabled) {
+    border-color: ${({ theme }) => theme.colors.accent.primary};
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+`
+
+export const HelperText = styled.div`
+  margin-top: 8px;
+  font-size: ${({ theme }) => theme.typography.sizes.sm};
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
+export const InlineMessage = styled.div<{ $tone?: 'success' | 'error' }>`
+  margin-top: 8px;
+  font-size: ${({ theme }) => theme.typography.sizes.sm};
+  color: ${({ theme, $tone }) =>
+    $tone === 'error' ? theme.colors.status.alarm : theme.colors.status.running};
+`
+
 export const ModalFooter = styled.div`
   display: flex;
   justify-content: flex-end;

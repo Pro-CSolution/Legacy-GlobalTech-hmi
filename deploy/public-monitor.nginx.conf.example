@@ -1,0 +1,74 @@
+server {
+    listen 443 ssl http2;
+    server_name monitor.globaltechconview.com;
+
+    # Replace with your certificate paths or let your TLS automation manage them.
+    ssl_certificate     /etc/ssl/certs/monitor.globaltechconview.com/fullchain.pem;
+    ssl_certificate_key /etc/ssl/private/monitor.globaltechconview.com/privkey.pem;
+
+    root /var/www/globaltech-monitor/dist-monitor;
+    index index.html;
+
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location ^~ /api/v1/monitor/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /ws/socket.io/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location ^~ /api/v1/commands/ {
+        return 403;
+    }
+
+    location ^~ /api/v1/system/ {
+        return 403;
+    }
+
+    location ^~ /api/v1/profiles {
+        return 403;
+    }
+
+    location ^~ /api/v1/wago-live/ {
+        return 403;
+    }
+
+    location ^~ /api/v1/manual-trend/ {
+        return 403;
+    }
+
+    location ^~ /api/v1/drive/ {
+        return 403;
+    }
+
+    location ^~ /api/v1/trip-events {
+        return 403;
+    }
+}

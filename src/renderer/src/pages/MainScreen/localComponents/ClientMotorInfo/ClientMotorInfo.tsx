@@ -1,119 +1,91 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { type TouchEvent as ReactTouchEvent, useEffect, useMemo, useRef, useState } from 'react'
 import Modal from 'react-modal'
 import { ClipboardList, Hand } from 'lucide-react'
 import Panel from 'components/Panel'
 import Card from 'components/Card'
 import { VirtualKeyboard } from 'components/VirtualKeyboard'
+import { useAccessMode } from 'hooks'
 import { useTheme } from 'styled-components'
 import { PositionProps } from 'styles/mixins'
 import {
+  CLIENT_MOTOR_MAX_EXTRAS,
+  DEFAULT_CLIENT_MOTOR_INFO,
+  loadClientMotorInfo,
+  saveClientMotorInfo,
+  type ClientMotorNameplate
+} from 'utils/clientMotorInfoStorage'
+import { isSingleTouchContact, MULTI_TOUCH_CANCEL_EVENT } from 'utils/touch'
+import {
+  AddButton,
   CardBody,
+  CompactFieldGrid,
+  CountBadge,
+  CustomFieldActions,
+  CustomFieldCard,
+  CustomFieldHeader,
+  CustomFieldTitle,
+  CustomFieldsList,
+  EmptyState,
+  EmptyText,
+  EmptyTitle,
+  Field,
+  FieldHint,
+  FieldInput,
+  FieldLabel,
+  FieldRow,
+  FooterActions,
+  FormGrid,
+  HintText,
   InfoGrid,
   InfoItem,
   InfoLabel,
   InfoValue,
-  HintText,
-  ExtrasList,
-  ExtraItem,
-  Tag,
-  MoreBadge,
-  AddButton,
-  ModalHeader,
-  ModalTitle,
   ModalBody,
-  ModalSection,
-  FormGrid,
-  Field,
-  FieldLabel,
-  FieldInput,
-  FieldRow,
-  SmallButton,
   ModalFooter,
-  FooterActions
+  ModalHeader,
+  ModalSection,
+  ModalTitle,
+  MoreBadge,
+  RemoveButton,
+  SectionCaption,
+  SectionHeading,
+  SmallButton,
+  Tag
 } from './ClientMotorInfo.styles'
 
-type ExtraField = { label: string; value: string }
 type KeyboardMode = 'numeric' | 'alpha'
 type KeyboardTarget =
   | { type: 'main'; key: keyof ClientMotorData }
   | { type: 'extra'; index: number; key: 'label' | 'value' }
 
-export interface ClientMotorData {
-  customer: string
-  model: string
-  catalog: string
-  hp: string
-  rpm: string
-  volts: string
-  amps: string
-  hz: string
-  frame: string
-  duty: string
-  enclosure: string
-  tempRise: string
-  serviceFactor: string
-  efficiency: string
-  inverterRating: string
-  extras: ExtraField[]
-}
+export type ClientMotorData = ClientMotorNameplate
 
-const STORAGE_KEY = 'client_motor_info'
 const LONG_PRESS_MS = 500
-const MAX_EXTRAS = 15
-const NUMERIC_FIELDS = new Set<keyof ClientMotorData>([
-  'hp',
-  'volts',
-  'amps',
-  'hz',
-  'rpm',
-  'efficiency',
-  'serviceFactor'
-])
+const MAX_VISIBLE_FIELDS = 12
+const NUMERIC_FIELDS = new Set<keyof ClientMotorData>()
 
-const DEFAULT_INFO: ClientMotorData = {
-  customer: 'MANSON',
-  model: 'FA17',
-  catalog: 'C125P2FSCR',
-  hp: '125',
-  rpm: '1785',
-  volts: '460',
-  amps: '147.0',
-  hz: '60',
-  frame: '444T',
-  duty: 'CONT',
-  enclosure: 'TEFC',
-  tempRise: '80C',
-  serviceFactor: '1.15',
-  efficiency: '94.5',
-  inverterRating: '20:1 VT / 4:1 CT @ 60Hz',
-  extras: [
-    { label: 'Second Rating', value: '150 HP @ 50Hz' },
-    { label: 'Volts @ 50Hz', value: '380' },
-    { label: 'Amps @ 50Hz', value: '177.0' }
-  ]
-}
+const DEFAULT_INFO: ClientMotorData = DEFAULT_CLIENT_MOTOR_INFO
 
-const loadStoredInfo = (): ClientMotorData => {
-  if (typeof window === 'undefined') return DEFAULT_INFO
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_INFO
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return DEFAULT_INFO
-    return {
-      ...DEFAULT_INFO,
-      ...parsed,
-      extras: Array.isArray(parsed.extras)
-        ? parsed.extras.slice(0, MAX_EXTRAS)
-        : DEFAULT_INFO.extras
-    }
-  } catch {
-    return DEFAULT_INFO
-  }
-}
+const PRIMARY_FIELDS: Array<[string, Exclude<keyof ClientMotorData, 'extras'>]> = [
+  ['Customer', 'customer'],
+  ['Drive Model', 'driveModel'],
+  ['Model No.', 'model'],
+  ['Serial No.', 'catalog'],
+  ['Catalog No.', 'hp'],
+  ['Ambient Air Max', 'frame'],
+  ['Phase', 'duty'],
+  ['Rated AC Volts', 'enclosure'],
+  ['Rated Amps AC', 'tempRise'],
+  ['Rated Power Factor', 'serviceFactor'],
+  ['Rated RPM / Hz', 'efficiency'],
+  ['Horse Power', 'inverterRating'],
+  ['Connection', 'connection'],
+  ['Max Operating RPM/Hz', 'maxOperating']
+]
 
 export const ClientMotorInfo = (positionProps: PositionProps) => {
   const theme = useTheme()
+  const { isViewOnly } = useAccessMode()
   const { width = 380, height = 360, ...panelProps } = positionProps
   const [info, setInfo] = useState<ClientMotorData>(DEFAULT_INFO)
   const [draft, setDraft] = useState<ClientMotorData>(DEFAULT_INFO)
@@ -134,20 +106,20 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
   })
 
   const openModal = () => {
+    if (isViewOnly) return
     setDraft(info)
     setIsModalOpen(true)
   }
 
   useEffect(() => {
     Modal.setAppElement('#root')
-    const stored = loadStoredInfo()
+    const stored = loadClientMotorInfo()
     setInfo(stored)
     setDraft(stored)
   }, [])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(info))
+    saveClientMotorInfo(info)
   }, [info])
 
   useEffect(() => {
@@ -178,6 +150,7 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
   )
 
   const startPress = () => {
+    if (isViewOnly) return
     if (pressTimer.current) window.clearTimeout(pressTimer.current)
     pressTimer.current = window.setTimeout(() => {
       openModal()
@@ -191,28 +164,63 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
     }
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleMultiTouchCancel = () => {
+      if (pressTimer.current) {
+        window.clearTimeout(pressTimer.current)
+        pressTimer.current = null
+      }
+    }
+
+    window.addEventListener(MULTI_TOUCH_CANCEL_EVENT, handleMultiTouchCancel)
+
+    return () => {
+      window.removeEventListener(MULTI_TOUCH_CANCEL_EVENT, handleMultiTouchCancel)
+      handleMultiTouchCancel()
+    }
+  }, [])
+
+  const handleCardTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (!isSingleTouchContact(event.nativeEvent)) {
+      cancelPress()
+      return
+    }
+
+    startPress()
+  }
+
   const handleSave = () => {
+    if (isViewOnly) {
+      setIsModalOpen(false)
+      return
+    }
+
     const sanitizedExtras = draft.extras
-      .map((e) => ({ ...e, label: e.label.trim(), value: e.value.trim() }))
-      .filter((e) => e.label.length > 0)
-      .slice(0, MAX_EXTRAS)
+      .map((item) => ({ ...item, label: item.label.trim(), value: item.value.trim() }))
+      .filter((item) => item.label.length > 0)
+      .slice(0, CLIENT_MOTOR_MAX_EXTRAS)
 
     setInfo({ ...draft, extras: sanitizedExtras })
     setIsModalOpen(false)
   }
 
   const handleAddExtra = () => {
-    if (draft.extras.length >= MAX_EXTRAS) return
+    if (isViewOnly || draft.extras.length >= CLIENT_MOTOR_MAX_EXTRAS) return
     setDraft((prev) => ({ ...prev, extras: [...prev.extras, { label: '', value: '' }] }))
   }
 
-  const handleRemoveExtra = (idx: number) => {
-    setDraft((prev) => ({ ...prev, extras: prev.extras.filter((_, i) => i !== idx) }))
+  const handleRemoveExtra = (index: number) => {
+    if (isViewOnly) return
+    setDraft((prev) => ({ ...prev, extras: prev.extras.filter((_, itemIndex) => itemIndex !== index) }))
   }
 
   const openKeyboard = (target: KeyboardTarget, label: string, initialValue: string) => {
+    if (isViewOnly) return
     const mode: KeyboardMode =
       target.type === 'main' && NUMERIC_FIELDS.has(target.key) ? 'numeric' : 'alpha'
+
     setKeyboard({
       visible: true,
       mode,
@@ -222,21 +230,30 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
     })
   }
 
-  const handleKeyboardConfirm = (val: string) => {
+  const handleKeyboardConfirm = (value: string) => {
+    if (isViewOnly) {
+      setKeyboard((prev) => ({ ...prev, visible: false }))
+      return
+    }
+
     if (!keyboard.target) {
       setKeyboard((prev) => ({ ...prev, visible: false }))
       return
     }
+
     if (keyboard.target.type === 'main') {
       const key = keyboard.target.key
-      setDraft((prev) => ({ ...prev, [key]: val }))
+      setDraft((prev) => ({ ...prev, [key]: value }))
     } else {
       const { index, key } = keyboard.target
       setDraft((prev) => ({
         ...prev,
-        extras: prev.extras.map((item, i) => (i === index ? { ...item, [key]: val } : item))
+        extras: prev.extras.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, [key]: value } : item
+        )
       }))
     }
+
     setKeyboard((prev) => ({ ...prev, visible: false }))
   }
 
@@ -247,23 +264,12 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
   const renderField = (label: string, value: string) => (
     <InfoItem key={label}>
       <InfoLabel>{label}</InfoLabel>
-      <InfoValue>{value || '—'}</InfoValue>
+      <InfoValue>{value || '--'}</InfoValue>
     </InfoItem>
   )
 
-  const VISIBLE_FIELDS: Array<[string, Exclude<keyof ClientMotorData, 'extras'>]> = [
-    ['Customer', 'customer'],
-    ['Model', 'model'],
-    ['Catalog', 'catalog'],
-    ['HP', 'hp'],
-    ['Volts', 'volts'],
-    ['Amps', 'amps'],
-    ['Hz', 'hz'],
-    ['RPM', 'rpm']
-  ]
-
-  const totalFields = Object.keys(info).length - 1 + info.extras.length
-  const hiddenCount = Math.max(totalFields - VISIBLE_FIELDS.length, 0)
+  const visibleFields = PRIMARY_FIELDS.slice(0, MAX_VISIBLE_FIELDS)
+  const hiddenCount = Math.max(PRIMARY_FIELDS.length - visibleFields.length, 0)
 
   return (
     <>
@@ -271,23 +277,23 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
         <Card
           title="Client & Motor"
           icon={ClipboardList}
-          // onClick={openModal}
           onMouseDown={startPress}
           onMouseUp={cancelPress}
           onMouseLeave={cancelPress}
-          onTouchStart={startPress}
+          onTouchStart={handleCardTouchStart}
           onTouchEnd={cancelPress}
           onTouchCancel={cancelPress}
         >
           <CardBody>
             <InfoGrid>
-              {VISIBLE_FIELDS.map(([label, key]) => renderField(label, info[key] as string))}
+              {visibleFields.map(([label, key]) => renderField(label, info[key] as string))}
             </InfoGrid>
 
             <MoreBadge>
               <HintText>
                 <Hand size={14} />
-                <Tag>Hold to edit</Tag> ({hiddenCount}+ more fields)
+                <Tag>{isViewOnly ? 'View only' : 'Hold to edit'}</Tag>
+                {hiddenCount > 0 ? ` (${hiddenCount}+ more fields)` : ' values'}
               </HintText>
             </MoreBadge>
           </CardBody>
@@ -300,12 +306,12 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
         shouldCloseOnOverlayClick
         shouldCloseOnEsc
         style={modalStyles}
-        contentLabel="Edit Client & Motor"
+        contentLabel={isViewOnly ? 'Client & Motor details' : 'Edit Client & Motor'}
       >
         <ModalHeader>
           <ModalTitle>
             <ClipboardList size={18} />
-            Edit Client & Motor
+            {isViewOnly ? 'Client & Motor Details' : 'Edit Client & Motor'}
           </ModalTitle>
           <SmallButton onClick={() => setIsModalOpen(false)}>Close</SmallButton>
         </ModalHeader>
@@ -314,25 +320,7 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
           <ModalSection>
             <h4>Primary fields</h4>
             <FormGrid>
-              {(
-                [
-                  ['Customer', 'customer'],
-                  ['Model', 'model'],
-                  ['Catalog', 'catalog'],
-                  ['HP', 'hp'],
-                  ['RPM', 'rpm'],
-                  ['Volts', 'volts'],
-                  ['Amps', 'amps'],
-                  ['Hz', 'hz'],
-                  ['Frame', 'frame'],
-                  ['Duty', 'duty'],
-                  ['Enclosure', 'enclosure'],
-                  ['Temp Rise', 'tempRise'],
-                  ['Service Factor', 'serviceFactor'],
-                  ['Efficiency', 'efficiency'],
-                  ['Inverter', 'inverterRating']
-                ] as Array<[string, Exclude<keyof ClientMotorData, 'extras'>]>
-              ).map(([label, key]) => (
+              {PRIMARY_FIELDS.map(([label, key]) => (
                 <Field key={key}>
                   <FieldLabel>{label}</FieldLabel>
                   <FieldInput
@@ -353,54 +341,94 @@ export const ClientMotorInfo = (positionProps: PositionProps) => {
 
           <ModalSection>
             <FieldRow>
-              <h4>
-                Custom fields ({draft.extras.length}/{MAX_EXTRAS})
-              </h4>
-              <AddButton onClick={handleAddExtra} disabled={draft.extras.length >= MAX_EXTRAS}>
-                Add field
-              </AddButton>
+              <SectionHeading>
+                <h4>Custom fields</h4>
+                <SectionCaption>
+                  {isViewOnly
+                    ? 'Saved nameplate notes and operator reference values.'
+                    : 'Add operator notes or extra nameplate values. Tap a field to edit it.'}
+                </SectionCaption>
+              </SectionHeading>
+              <CountBadge>
+                {draft.extras.length}/{CLIENT_MOTOR_MAX_EXTRAS}
+              </CountBadge>
+              {isViewOnly ? null : (
+                <AddButton
+                  onClick={handleAddExtra}
+                  disabled={draft.extras.length >= CLIENT_MOTOR_MAX_EXTRAS}
+                >
+                  Add field
+                </AddButton>
+              )}
             </FieldRow>
 
-            <ExtrasList $dense>
-              {draft.extras.map((item, idx) => (
-                <ExtraItem key={`edit-${idx}`}>
-                  <FieldLabel>Label</FieldLabel>
-                  <FieldInput
-                    value={item.label}
-                    readOnly
-                    onClick={() =>
-                      openKeyboard(
-                        { type: 'extra', index: idx, key: 'label' },
-                        `Label ${idx + 1}`,
-                        item.label
-                      )
-                    }
-                  />
-                  <FieldLabel>Value</FieldLabel>
-                  <FieldInput
-                    value={item.value}
-                    readOnly
-                    onClick={() =>
-                      openKeyboard(
-                        { type: 'extra', index: idx, key: 'value' },
-                        `Value ${idx + 1}`,
-                        item.value
-                      )
-                    }
-                  />
-                  <SmallButton onClick={() => handleRemoveExtra(idx)}>Remove</SmallButton>
-                </ExtraItem>
-              ))}
-            </ExtrasList>
+            {draft.extras.length === 0 ? (
+              <EmptyState>
+                <EmptyTitle>No custom fields yet</EmptyTitle>
+                <EmptyText>
+                  Use Add field to save extra values that are not part of the main nameplate list.
+                </EmptyText>
+              </EmptyState>
+            ) : (
+              <CustomFieldsList>
+                {draft.extras.map((item, index) => (
+                  <CustomFieldCard key={`edit-${index}`}>
+                    <CustomFieldHeader>
+                      <CustomFieldTitle>Custom field {index + 1}</CustomFieldTitle>
+                      <CustomFieldActions>
+                        <FieldHint>{isViewOnly ? 'View only' : 'Tap label or value to edit'}</FieldHint>
+                        {isViewOnly ? null : (
+                          <RemoveButton onClick={() => handleRemoveExtra(index)}>Remove</RemoveButton>
+                        )}
+                      </CustomFieldActions>
+                    </CustomFieldHeader>
+
+                    <CompactFieldGrid>
+                      <Field>
+                        <FieldLabel>Label</FieldLabel>
+                        <FieldInput
+                          value={item.label}
+                          readOnly
+                          placeholder="Field name"
+                          onClick={() =>
+                            openKeyboard(
+                              { type: 'extra', index, key: 'label' },
+                              `Label ${index + 1}`,
+                              item.label
+                            )
+                          }
+                        />
+                      </Field>
+
+                      <Field>
+                        <FieldLabel>Value</FieldLabel>
+                        <FieldInput
+                          value={item.value}
+                          readOnly
+                          placeholder="Field value"
+                          onClick={() =>
+                            openKeyboard(
+                              { type: 'extra', index, key: 'value' },
+                              `Value ${index + 1}`,
+                              item.value
+                            )
+                          }
+                        />
+                      </Field>
+                    </CompactFieldGrid>
+                  </CustomFieldCard>
+                ))}
+              </CustomFieldsList>
+            )}
           </ModalSection>
         </ModalBody>
 
         <ModalFooter>
           <FooterActions>
-            <SmallButton onClick={() => setIsModalOpen(false)}>Cancel</SmallButton>
-            <SmallButton $primary onClick={handleSave}>
-              Save
+            <SmallButton onClick={() => setIsModalOpen(false)}>
+              {isViewOnly ? 'Close' : 'Cancel'}
             </SmallButton>
+            {isViewOnly ? null : <SmallButton $primary onClick={handleSave}>Save</SmallButton>}
           </FooterActions>
         </ModalFooter>
       </Modal>

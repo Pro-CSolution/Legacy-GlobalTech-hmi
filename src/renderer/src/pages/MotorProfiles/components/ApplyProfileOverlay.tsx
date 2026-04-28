@@ -5,6 +5,12 @@ import { Profile, ApplyProfileResult } from 'types/profile'
 import { applyProfile } from 'services/profileService'
 import { useRealtime } from 'hooks/useRealtime'
 import { getDriveParameters } from 'services/driveService'
+import {
+  getMotorDeviceRole,
+  getMotorDriveDeviceId,
+  getMotorScopeLabel,
+  type MotorScope
+} from 'utils/motorDeviceMapping'
 
 const Overlay = styled.div`
   position: fixed;
@@ -126,6 +132,7 @@ const Button = styled.button<{ $primary?: boolean }>`
 
 interface ApplyProfileOverlayProps {
   profile: Profile
+  targetMotorScope: MotorScope
   onClose: () => void
   onCancel?: () => void
 }
@@ -145,6 +152,7 @@ interface ItemState {
 
 export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
   profile,
+  targetMotorScope,
   onClose,
   onCancel
 }) => {
@@ -154,9 +162,18 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
   const { devicesData, subscribeDevice, unsubscribeDevice } = useRealtime()
   const devicesDataRef = useRef(devicesData)
   const [paramMeta, setParamMeta] = useState<Record<string, { name?: string }>>({})
-  const initRef = useRef<number | null>(null)
-  const subRef = useRef<number | null>(null)
   const itemsRef = useRef<ItemState[]>([])
+
+  const resolvedProfileParameters = profile.parameters.map((param) => {
+    if (getMotorDeviceRole(param.device_id) !== 'drive') {
+      return param
+    }
+
+    return {
+      ...param,
+      device_id: getMotorDriveDeviceId(targetMotorScope)
+    }
+  })
 
   // Keep latest realtime snapshot in a ref so verification timers don't get reset by frequent updates.
   useEffect(() => {
@@ -174,9 +191,7 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
 
   // Initialize items
   useEffect(() => {
-    if (initRef.current === profile.id) return
-    initRef.current = profile.id
-    const initial = profile.parameters.map((p) => ({
+    const initial = resolvedProfileParameters.map((p) => ({
       id: `${p.device_id}:${p.parameter_id}`,
       device_id: p.device_id,
       parameter_id: p.parameter_id,
@@ -186,7 +201,7 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
     }))
     itemsRef.current = initial
     setItems(initial)
-  }, [profile])
+  }, [profile, targetMotorScope])
 
   // Load parameter metadata (name) for display
   useEffect(() => {
@@ -225,14 +240,12 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
 
   // Subscribe to devices
   useEffect(() => {
-    if (subRef.current === profile.id) return
-    subRef.current = profile.id
-    const devices = new Set(profile.parameters.map((p) => p.device_id))
+    const devices = new Set(resolvedProfileParameters.map((p) => p.device_id))
     devices.forEach((d) => subscribeDevice(d))
     return () => {
       devices.forEach((d) => unsubscribeDevice(d))
     }
-  }, [profile, subscribeDevice, unsubscribeDevice])
+  }, [profile, targetMotorScope, subscribeDevice, unsubscribeDevice])
 
   // Trigger Application
   useEffect(() => {
@@ -252,8 +265,7 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
       )
 
       try {
-        // Note: The API applies ALL items in the profile currently.
-        const resp = await applyProfile(profile.id)
+        const resp = await applyProfile(profile.id, targetMotorScope)
 
         if (mounted) {
           setItemsSync((prev) =>
@@ -305,7 +317,7 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
     return () => {
       mounted = false
     }
-  }, [profile.id, isRunning, runToken, items.length])
+  }, [profile.id, isRunning, runToken, items.length, targetMotorScope])
 
   // Verification Logic (Realtime)
   useEffect(() => {
@@ -416,7 +428,7 @@ export const ApplyProfileOverlay: React.FC<ApplyProfileOverlayProps> = ({
           <Subtitle>
             {completed
               ? `Completed. Success: ${successCount}, Errors: ${errorCount}`
-              : 'Writing parameters to devices...'}
+              : `Writing parameters to ${getMotorScopeLabel(targetMotorScope)} drive...`}
           </Subtitle>
         </Header>
 

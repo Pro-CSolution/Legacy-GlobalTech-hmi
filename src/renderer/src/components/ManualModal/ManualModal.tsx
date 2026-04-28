@@ -26,7 +26,11 @@ export const ManualModal = ({
     <ModalBase
       isOpen={isOpen}
       onRequestClose={onClose}
-      width={1240}
+      width="100vw"
+      height="100vh"
+      maxWidth="100vw"
+      maxHeight="100vh"
+      borderRadius={0}
       ariaLabel={title}
     >
       <ManualModalBody>

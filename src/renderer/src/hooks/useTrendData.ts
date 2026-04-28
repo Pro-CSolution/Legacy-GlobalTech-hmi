@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchTrendHistory, onTrendUpdate, subscribeTrend, unsubscribeTrend } from 'services'
-import { DeviceId, ParameterId } from 'types'
+import { ParameterId } from 'types'
 import { ParameterAlias, PARAMETER_ALIASES } from 'types/generated/devices'
 import { Dataset } from 'components/TrendChart/TrendChart.types'
 import { createKeyedThrottle, debugLog } from 'utils/debug'
 
 type UseTrendDataOptions = {
   windowMinutes?: number
+  startTime?: string
+  endTime?: string
   limitPerParam?: number
+  realtime?: boolean
 }
 
 type TrendDataset = Dataset & { parameterId: ParameterId }
@@ -65,6 +68,22 @@ const safeSeconds = (value: unknown, fallbackSeconds: number): { seconds: number
   return { seconds: fallbackSeconds, ok: false }
 }
 
+const resolveAbsoluteRange = (
+  startTime?: string,
+  endTime?: string
+): { startSec: number; endSec: number } | null => {
+  if (!startTime || !endTime) return null
+
+  const startSec = toSeconds(startTime)
+  const endSec = toSeconds(endTime)
+
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || !(endSec > startSec)) {
+    return null
+  }
+
+  return { startSec, endSec }
+}
+
 type ParameterKey = ParameterId | ParameterAlias
 
 const resolveParameterIds = (keys: ParameterKey[]): ParameterId[] =>
@@ -77,21 +96,37 @@ const resolveParameterIds = (keys: ParameterKey[]): ParameterId[] =>
     .filter((v, idx, arr): v is ParameterId => typeof v === 'string' && arr.indexOf(v) === idx)
 
 export const useTrendData = (
-  deviceId: DeviceId,
+  deviceId: string,
   parameterKeys: ParameterKey[],
-  { windowMinutes = 5, limitPerParam = 2000 }: UseTrendDataOptions = {}
+  {
+    windowMinutes = 5,
+    startTime,
+    endTime,
+    limitPerParam = 2000,
+    realtime = true
+  }: UseTrendDataOptions = {}
 ) => {
   const [datasets, setDatasets] = useState<TrendDataset[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [xDomain, setXDomain] = useState<{ min: number; max: number } | null>(null)
 
-  const timeWindowSeconds = useMemo(() => windowMinutes * 60, [windowMinutes])
+  const absoluteRange = useMemo(
+    () => resolveAbsoluteRange(startTime, endTime),
+    [startTime, endTime]
+  )
+  const timeWindowSeconds = useMemo(() => {
+    if (absoluteRange) {
+      return absoluteRange.endSec - absoluteRange.startSec
+    }
+
+    return windowMinutes * 60
+  }, [absoluteRange, windowMinutes])
   const parameterIds = useMemo(() => resolveParameterIds(parameterKeys), [parameterKeys])
   const debugGate = useMemo(() => createKeyedThrottle(1500), [])
   const loadSeqRef = useRef(0)
   const lastRealtimeTsRef = useRef<number | null>(null)
-  const prevDeviceIdRef = useRef<DeviceId | null>(null)
+  const prevDeviceIdRef = useRef<string | null>(null)
   const retryAttemptRef = useRef(0)
   const retryTimerRef = useRef<number | null>(null)
 
@@ -148,33 +183,39 @@ export const useTrendData = (
         }))
       }
 
+      const prevById = new Map(prev.map((dataset) => [dataset.parameterId, dataset] as const))
+
       return parameterIds.map((pid, idx) => ({
+        ...(prevById.get(pid) ?? {}),
         parameterId: pid,
         label: (parameterKeys[idx] ?? pid) as string,
-        data: [],
-        borderColor: TREND_COLORS[idx % TREND_COLORS.length],
-        backgroundColor: 'transparent',
-        tension: 0.4,
-        pointRadius: 0,
-        borderWidth: 2
+        data: prevById.get(pid)?.data ?? [],
+        borderColor: prevById.get(pid)?.borderColor ?? TREND_COLORS[idx % TREND_COLORS.length],
+        backgroundColor: prevById.get(pid)?.backgroundColor ?? 'transparent',
+        tension: prevById.get(pid)?.tension ?? 0.4,
+        pointRadius: prevById.get(pid)?.pointRadius ?? 0,
+        borderWidth: prevById.get(pid)?.borderWidth ?? 2
       }))
     })
 
     // Si todavía no hay dominio, dejamos uno inicial para que el gráfico tenga un rango mientras llega el historial.
-    setXDomain((prev) => {
-      if (prev) return prev
-      const now = Date.now() / 1000
-      return { min: now - timeWindowSeconds, max: now }
-    })
+    const requestedDomain = absoluteRange
+      ? { min: absoluteRange.startSec, max: absoluteRange.endSec }
+      : (() => {
+          const now = Date.now() / 1000
+          return { min: now - timeWindowSeconds, max: now }
+        })()
+
+    setXDomain(requestedDomain)
 
     lastRealtimeTsRef.current = null
-  }, [deviceId, parameterIds, parameterKeys, timeWindowSeconds, clearRetryTimer])
+  }, [deviceId, parameterIds, parameterKeys, timeWindowSeconds, clearRetryTimer, absoluteRange])
 
   const loadHistory = useCallback(
     async ({ resetRetry = true }: { resetRetry?: boolean } = {}) => {
       if (!parameterIds.length) return
 
-      const perfSessionId = `${deviceId}:${windowMinutes}m:${parameterIds.length}p:${Date.now()}`
+      const perfSessionId = `${deviceId}:${timeWindowSeconds}s:${parameterIds.length}p:${Date.now()}`
       const perfLoadStart = perfNow()
       if (resetRetry) {
         retryAttemptRef.current = 0
@@ -187,7 +228,8 @@ export const useTrendData = (
       try {
         const nowSeconds = Date.now() / 1000
         const windowSec = timeWindowSeconds
-        const cutoffForNow = nowSeconds - windowSec
+        const rangeStartSec = absoluteRange?.startSec ?? nowSeconds - windowSec
+        const rangeEndSec = absoluteRange?.endSec ?? nowSeconds
 
         // El backend limita por parámetro y devuelve *los más recientes primero*.
         // Si la señal es de alta frecuencia, 2000 puntos pueden NO cubrir la ventana completa.
@@ -202,11 +244,14 @@ export const useTrendData = (
           debugLog('trend.data', 'loadHistory start', {
             deviceId,
             windowMinutes,
+            startTime,
+            endTime,
             timeWindowSeconds,
             limitPerParam,
             parameterIds,
             nowSeconds,
-            cutoffForNow
+            rangeStartSec,
+            rangeEndSec
           })
         }
 
@@ -216,6 +261,8 @@ export const useTrendData = (
             deviceId,
             parameterIds,
             windowMinutes,
+            startTime,
+            endTime,
             limitPerParam: requestLimit
           })
           const reqEnd = perfNow()
@@ -269,11 +316,10 @@ export const useTrendData = (
             })
           }
 
-          const anchorCandidate = Math.max(
-            nowSeconds,
-            Number.isFinite(observedMaxX) ? observedMaxX : nowSeconds
-          )
-          const cutoffCandidate = anchorCandidate - windowSec
+          const anchorCandidate = absoluteRange
+            ? rangeEndSec
+            : Math.max(nowSeconds, Number.isFinite(observedMaxX) ? observedMaxX : nowSeconds)
+          const cutoffCandidate = absoluteRange ? rangeStartSec : anchorCandidate - windowSec
 
           perSeries.forEach((entry) => {
             const minX = entry.minX as number | null
@@ -372,8 +418,8 @@ export const useTrendData = (
         }
 
         const observedMax = Number.isFinite(maxTsFromResponse) ? maxTsFromResponse : nowSeconds
-        const anchorMax = Math.max(nowSeconds, observedMax)
-        const cutoff = anchorMax - windowSec
+        const anchorMax = absoluteRange ? rangeEndSec : Math.max(nowSeconds, observedMax)
+        const cutoff = absoluteRange ? rangeStartSec : anchorMax - windowSec
 
         const nextDatasets: TrendDataset[] = parameterIds.map((pid, idx) => {
           const series = response.series?.[pid] || []
@@ -400,7 +446,7 @@ export const useTrendData = (
 
         setDatasets(nextDatasets)
         setXDomain({ min: cutoff, max: anchorMax })
-        lastRealtimeTsRef.current = anchorMax
+        lastRealtimeTsRef.current = absoluteRange ? null : anchorMax
         // Éxito: limpiar estado de retry
         retryAttemptRef.current = 0
         clearRetryTimer()
@@ -421,7 +467,7 @@ export const useTrendData = (
             observedMax,
             maxTsFromResponse: Number.isFinite(maxTsFromResponse) ? maxTsFromResponse : null,
             anchorMax,
-            driftSec: nowSeconds - anchorMax,
+            driftSec: absoluteRange ? null : nowSeconds - anchorMax,
             windowSec,
             stats
           })
@@ -483,20 +529,22 @@ export const useTrendData = (
       parameterIds,
       parameterKeys,
       windowMinutes,
+      startTime,
+      endTime,
       limitPerParam,
       timeWindowSeconds,
+      absoluteRange,
       debugGate,
       clearRetryTimer
     ]
   )
 
   useEffect(() => {
-    if (!parameterIds.length) return
     void loadHistory({ resetRetry: true })
-  }, [loadHistory, parameterIds.length])
+  }, [loadHistory])
 
   useEffect(() => {
-    if (!parameterIds.length) return
+    if (!parameterIds.length || !realtime || absoluteRange) return
 
     subscribeTrend(deviceId, parameterIds)
     const off = onTrendUpdate((payload) => {
@@ -601,7 +649,7 @@ export const useTrendData = (
         console.error('[useTrendData] unsubscribeTrend failed during cleanup', err)
       }
     }
-  }, [deviceId, parameterIds, timeWindowSeconds, limitPerParam, debugGate])
+  }, [deviceId, parameterIds, timeWindowSeconds, debugGate, realtime, absoluteRange])
 
   const getDataset = useCallback(
     (key: ParameterKey | ParameterId): TrendDataset[] => {

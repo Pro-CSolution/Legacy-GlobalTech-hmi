@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, ReactNode } from 'react'
+import { useState, useRef, useEffect, ReactNode, type TouchEvent as ReactTouchEvent } from 'react'
 import styled from 'styled-components'
+import { isSingleTouchContact, MULTI_TOUCH_CANCEL_EVENT } from 'utils/touch'
 
 interface HoldButtonProps {
   onHoldComplete: () => void
@@ -108,8 +109,34 @@ export const HoldButton = ({
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => stop()
+    if (typeof window === 'undefined') {
+      return () => stop()
+    }
+
+    const handleMultiTouchCancel = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+      setProgress(0)
+    }
+
+    window.addEventListener(MULTI_TOUCH_CANCEL_EVENT, handleMultiTouchCancel)
+
+    return () => {
+      window.removeEventListener(MULTI_TOUCH_CANCEL_EVENT, handleMultiTouchCancel)
+      handleMultiTouchCancel()
+    }
   }, [])
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLButtonElement>) => {
+    if (!isSingleTouchContact(event.nativeEvent)) {
+      stop()
+      return
+    }
+
+    start(event)
+  }
 
   return (
     <ButtonContainer
@@ -118,7 +145,7 @@ export const HoldButton = ({
       onMouseDown={start}
       onMouseUp={stop}
       onMouseLeave={stop}
-      onTouchStart={start}
+      onTouchStart={handleTouchStart}
       onTouchEnd={stop}
     >
       <RadialOverlay $progress={progress} />

@@ -1,12 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router'
 import { ScreenLayout } from 'layouts'
+import {
+  useAccessMode,
+  useIsViewportBelow,
+  useMotorControlModePreference,
+  usePreferredSingleMotorScope
+} from 'hooks'
 import { useRealtime } from 'hooks/useRealtime'
 import { useOnDemandParameters } from 'hooks/useOnDemandParameters'
 import { useSendCommand } from 'hooks/useSendCommand'
-import { getDriveMenus, getDriveParameters } from 'services/driveService'
+import {
+  getDriveMenusForDevice,
+  getDriveParameters,
+  updateDriveParameterScaleFactor
+} from 'services/driveService'
 import { DriveMenu, DriveParameter } from 'types/drive'
-import { DeviceId, ParameterId } from 'types'
+import { ParameterId } from 'types'
 import { VirtualKeyboard } from 'components/VirtualKeyboard'
+import { getMotorDriveDeviceId, type MotorScope } from 'utils/motorDeviceMapping'
 import { ParameterDetailModal } from './components/ParameterDetailModal/ParameterDetailModal'
 import {
   Badge,
@@ -18,6 +30,13 @@ import {
   CardsArea,
   ContentArea,
   FooterRow,
+  HeaderCenterControls,
+  HeaderLeft,
+  HeaderMetaText,
+  HeaderMotorButton,
+  HeaderMotorSelector,
+  HeaderRightInfo,
+  HeaderRightLayout,
   HeaderRow,
   MenuItem,
   MenuList,
@@ -34,17 +53,42 @@ import {
   SearchInput,
   SearchRow,
   Sidebar,
+  MobileMenuToolbar,
+  MobileMenuSummary,
+  MobileMenuLabel,
+  MobileMenuValue,
+  MenuPickerButton,
+  MenuPickerOverlay,
+  MenuPickerDialog,
+  MenuPickerHeader,
+  MenuPickerTitleGroup,
+  MenuPickerTitle,
+  MenuPickerSubtitle,
+  MenuPickerClose,
+  MenuPickerList,
+  MenuPickerItem,
+  MenuPickerItemTitle,
+  MenuPickerItemBadge,
   Title,
   Unit,
   Value,
   ValueRow,
   SubLabel
 } from './DriveParameters.styles'
-import { List, RotateCw, Search, ChevronUp, ChevronDown } from 'lucide-react'
+import { List, RotateCw, Search, ChevronUp, ChevronDown, X } from 'lucide-react'
 
 const PAGE_SIZE = 9
 const EXTRA_LIMIT = 3
-const DEVICE_ID = 'drive_avid' as DeviceId
+
+type DriveParametersNavigationState = {
+  motorScope?: MotorScope
+} | null
+
+const normalizeMotorScope = (value: unknown): MotorScope | null => {
+  if (value === 1 || value === '1') return 1
+  if (value === 2 || value === '2') return 2
+  return null
+}
 
 const formatValue = (value: unknown) => {
   if (value === null || value === undefined) return '-'
@@ -52,8 +96,15 @@ const formatValue = (value: unknown) => {
 }
 
 const DriveParameters = () => {
+  const { isViewOnly } = useAccessMode()
+  const isMobileViewport = useIsViewportBelow(768)
+  const isMobileViewOnly = isViewOnly && isMobileViewport
+  const location = useLocation()
+  const navigationState = location.state as DriveParametersNavigationState
+  const requestedMotorScope = normalizeMotorScope(navigationState?.motorScope)
   const [menus, setMenus] = useState<DriveMenu[]>([])
-  const [selectedMenu, setSelectedMenu] = useState<number | null>(1)
+  const [selectedMenu, setSelectedMenu] = useState<number | null>(null)
+  const [selectedMotor, setSelectedMotor] = useState<MotorScope>(requestedMotorScope ?? 1)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [parameters, setParameters] = useState<DriveParameter[]>([])
@@ -61,6 +112,7 @@ const DriveParameters = () => {
   const [loading, setLoading] = useState(false)
   const [modalParam, setModalParam] = useState<DriveParameter | null>(null)
   const [saving, setSaving] = useState(false)
+  const [isMenuPickerOpen, setIsMenuPickerOpen] = useState(false)
   const [searchKeyboard, setSearchKeyboard] = useState<{ visible: boolean; initialValue: string }>({
     visible: false,
     initialValue: ''
@@ -69,67 +121,117 @@ const DriveParameters = () => {
   const menuListRef = useRef<HTMLDivElement>(null)
   const scrollIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
+  const [motorControlMode] = useMotorControlModePreference()
+  const singleMotorScope = usePreferredSingleMotorScope()
+  const isDualMotorMode = motorControlMode === 'dual'
+  const activeMotorScope: MotorScope = isDualMotorMode ? selectedMotor : singleMotorScope
   const { devicesData, subscribeDevice, unsubscribeDevice } = useRealtime()
   const { writeParameter } = useSendCommand()
+  const activeDeviceId = getMotorDriveDeviceId(activeMotorScope)
+  const normalizedSearch = search.trim()
+  const isSearchingAllMenus = normalizedSearch.length > 0
 
-  const liveSnapshot = devicesData[DEVICE_ID] || {}
+  const liveSnapshot = devicesData[activeDeviceId] || {}
 
   useEffect(() => {
-    subscribeDevice(DEVICE_ID)
-    return () => unsubscribeDevice(DEVICE_ID)
-  }, [subscribeDevice, unsubscribeDevice])
+    if (!isDualMotorMode || requestedMotorScope === null) return
+
+    setSelectedMotor(requestedMotorScope)
+  }, [isDualMotorMode, requestedMotorScope])
+
+  const parseMenuNumber = useCallback((menu: DriveMenu['menu']) => {
+    if (typeof menu === 'number') return menu
+    const numeric = Number.parseInt(String(menu), 10)
+    return Number.isNaN(numeric) ? null : numeric
+  }, [])
+
+  useEffect(() => {
+    subscribeDevice(activeDeviceId)
+    return () => unsubscribeDevice(activeDeviceId)
+  }, [activeDeviceId, subscribeDevice, unsubscribeDevice])
 
   useEffect(() => {
     const loadMenus = async () => {
       try {
-        const data = await getDriveMenus()
-        setMenus(data)
-        if (data.length && selectedMenu === null) {
-          const firstNumeric = data.find((m) => typeof m.menu === 'number')
-          setSelectedMenu(
-            typeof firstNumeric?.menu === 'number' ? firstNumeric.menu : (data[0].menu as number)
-          )
+        const data = await getDriveMenusForDevice(activeDeviceId)
+        const safeMenus = Array.isArray(data) ? data : []
+        const populatedMenus = safeMenus.filter((menu) => parseMenuNumber(menu.menu) !== null)
+
+        setMenus(populatedMenus)
+        if (!populatedMenus.length) {
+          setSelectedMenu(null)
+          return
         }
+
+        setSelectedMenu((current) => {
+          const selectedStillExists = populatedMenus.some(
+            (menu) => parseMenuNumber(menu.menu) === current
+          )
+          if (current === null || !selectedStillExists) {
+            return parseMenuNumber(populatedMenus[0].menu)
+          }
+          return current
+        })
       } catch (err) {
         console.error('Failed to load menus', err)
       }
     }
     void loadMenus()
-  }, [selectedMenu])
+  }, [activeDeviceId, parseMenuNumber])
 
-  useEffect(() => {
-    const loadParameters = async () => {
-      setLoading(true)
-      try {
-        const resp = await getDriveParameters({
-          deviceId: DEVICE_ID,
-          menu: selectedMenu ?? undefined,
-          search,
-          page,
-          pageSize: PAGE_SIZE
-        })
-        setParameters(resp.items)
-        setTotal(resp.total)
-      } catch (err) {
-        console.error('Failed to load parameters', err)
+  const refreshParameters = useCallback(async (resetOnError = true) => {
+    setLoading(true)
+    try {
+      const resp = await getDriveParameters({
+        deviceId: activeDeviceId,
+        menu: isSearchingAllMenus ? undefined : selectedMenu ?? undefined,
+        search: normalizedSearch,
+        page,
+        pageSize: PAGE_SIZE
+      })
+      const safeItems = Array.isArray(resp.items) ? resp.items : []
+      const safeTotal = Number.isFinite(resp.total) ? resp.total : safeItems.length
+
+      setParameters(safeItems)
+      setTotal(safeTotal)
+      setModalParam((current) => {
+        if (!current) return current
+        return safeItems.find((item) => item.id === current.id) ?? current
+      })
+      return {
+        ...resp,
+        items: safeItems,
+        total: safeTotal
+      }
+    } catch (err) {
+      console.error('Failed to load parameters', err)
+      if (resetOnError) {
         setParameters([])
         setTotal(0)
-      } finally {
-        setLoading(false)
       }
+      throw err
+    } finally {
+      setLoading(false)
     }
-    void loadParameters()
-  }, [selectedMenu, search, page])
+  }, [activeDeviceId, isSearchingAllMenus, normalizedSearch, page, selectedMenu])
+
+  useEffect(() => {
+    void refreshParameters().catch(() => undefined)
+  }, [refreshParameters])
 
   const visibleIds = useMemo(() => parameters.map((p) => p.id), [parameters])
 
   useOnDemandParameters({
-    deviceId: DEVICE_ID,
+    deviceId: activeDeviceId,
     parameterIds: visibleIds,
     limit: PAGE_SIZE + EXTRA_LIMIT
   })
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const selectedMotorLabel = `Motor #${activeMotorScope}`
+  const selectedMenuLabel =
+    menus.find((menu) => parseMenuNumber(menu.menu) === selectedMenu)?.name ?? 'User Configured Menu'
+  const parameterScopeLabel = isSearchingAllMenus ? 'All menus' : selectedMenu ?? 'All'
 
   const openModal = (param: DriveParameter) => {
     setModalParam(param)
@@ -147,16 +249,43 @@ const DriveParameters = () => {
 
     try {
       setSaving(true)
-      await writeParameter({
-        deviceId: DEVICE_ID,
+      const success = await writeParameter({
+        deviceId: activeDeviceId,
         parameterId: modalParam.id as ParameterId,
         value: value
       })
+      if (!success) {
+        throw new Error('Failed to write parameter')
+      }
       closeModal()
     } catch (err) {
       console.error('Failed to write parameter', err)
+      throw err instanceof Error ? err : new Error('Failed to write parameter')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleScaleFactorChange = async (scaleFactor: number) => {
+    if (!modalParam) return
+
+    await updateDriveParameterScaleFactor({
+      deviceId: activeDeviceId,
+      parameterId: modalParam.id,
+      scaleFactor
+    })
+
+    setParameters((current) =>
+      current.map((param) => (param.id === modalParam.id ? { ...param, scale_factor: scaleFactor } : param))
+    )
+    setModalParam((current) =>
+      current ? { ...current, scale_factor: scaleFactor } : current
+    )
+
+    try {
+      await refreshParameters(false)
+    } catch (err) {
+      console.error('Failed to refresh parameters after scale factor update', err)
     }
   }
 
@@ -181,92 +310,148 @@ const DriveParameters = () => {
     }
   }
 
-  const pagedInfo = `${(page - 1) * PAGE_SIZE + 1}-${Math.min(page * PAGE_SIZE, total)} of ${total}`
+  useEffect(() => {
+    return () => {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current)
+        scrollIntervalRef.current = null
+      }
+    }
+  }, [])
+
+  const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const pagedInfo = `${pageStart}-${Math.min(page * PAGE_SIZE, total)} of ${total}`
+  const headerMeta = (
+    <>
+      {isDualMotorMode ? <HeaderMetaText>{selectedMotorLabel}</HeaderMetaText> : null}
+      <Meta>
+        <span>Menu: {parameterScopeLabel}</span>
+        <span>Params: {pagedInfo}</span>
+        {loading && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <RotateCw size={18} /> Loading
+          </span>
+        )}
+      </Meta>
+    </>
+  )
 
   return (
     <ScreenLayout>
       <PageWrapper>
-        <Sidebar>
-          <SearchRow>
-            <SearchInput
-              value={search}
-              onPointerDown={(e) => {
-                if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-                  e.preventDefault()
-                  setSearchKeyboard({ visible: true, initialValue: search })
-                }
-              }}
-              onClick={() => setSearchKeyboard({ visible: true, initialValue: search })}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search ID or Name"
-            />
-            <Search color="#94a3b8" />
-          </SearchRow>
+        {!isMobileViewOnly ? (
+          <Sidebar>
+            <SearchRow>
+              <SearchInput
+                value={search}
+                onPointerDown={(e) => {
+                  if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+                    e.preventDefault()
+                    setSearchKeyboard({ visible: true, initialValue: search })
+                  }
+                }}
+                onClick={() => setSearchKeyboard({ visible: true, initialValue: search })}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                }}
+                placeholder="Search all menus"
+              />
+              <Search color="#94a3b8" />
+            </SearchRow>
 
-          <MenuListWrapper>
-            <MenuList ref={menuListRef}>
-              {menus.map((m) => {
-                const menuNum = typeof m.menu === 'number' ? m.menu : m.menu
-                const active = menuNum === selectedMenu
-                return (
-                  <MenuItem
-                    key={`${m.menu}`}
-                    $active={active}
-                    onClick={() => {
-                      const numeric =
-                        typeof m.menu === 'number' ? m.menu : Number.parseInt(String(m.menu), 10)
-                      setSelectedMenu(Number.isNaN(numeric) ? null : numeric)
-                      setPage(1)
-                    }}
-                  >
-                    <MenuName>{m.name}</MenuName>
-                    <MenuBadge>Menu {m.menu}</MenuBadge>
-                  </MenuItem>
-                )
-              })}
-            </MenuList>
-          </MenuListWrapper>
+            <MenuListWrapper>
+              <MenuList ref={menuListRef}>
+                {menus.map((m) => {
+                  const menuNum = parseMenuNumber(m.menu)
+                  const active = menuNum === selectedMenu
+                  return (
+                    <MenuItem
+                      key={`${m.menu}`}
+                      $active={active}
+                      onClick={() => {
+                        setSelectedMenu(parseMenuNumber(m.menu))
+                        setPage(1)
+                      }}
+                    >
+                      <MenuName>{m.name}</MenuName>
+                      <MenuBadge>Menu {m.menu}</MenuBadge>
+                    </MenuItem>
+                  )
+                })}
+              </MenuList>
+            </MenuListWrapper>
 
-          <ScrollControls>
-            <ScrollButton
-              onMouseDown={() => startScroll('up')}
-              onMouseUp={stopScroll}
-              onMouseLeave={stopScroll}
-              onTouchStart={() => startScroll('up')}
-              onTouchEnd={stopScroll}
-            >
-              <ChevronUp size={24} />
-            </ScrollButton>
-            <ScrollButton
-              onMouseDown={() => startScroll('down')}
-              onMouseUp={stopScroll}
-              onMouseLeave={stopScroll}
-              onTouchStart={() => startScroll('down')}
-              onTouchEnd={stopScroll}
-            >
-              <ChevronDown size={24} />
-            </ScrollButton>
-          </ScrollControls>
-        </Sidebar>
+            <ScrollControls>
+              <ScrollButton
+                onMouseDown={() => startScroll('up')}
+                onMouseUp={stopScroll}
+                onMouseLeave={stopScroll}
+                onTouchStart={() => startScroll('up')}
+                onTouchEnd={stopScroll}
+              >
+                <ChevronUp size={24} />
+              </ScrollButton>
+              <ScrollButton
+                onMouseDown={() => startScroll('down')}
+                onMouseUp={stopScroll}
+                onMouseLeave={stopScroll}
+                onTouchStart={() => startScroll('down')}
+                onTouchEnd={stopScroll}
+              >
+                <ChevronDown size={24} />
+              </ScrollButton>
+            </ScrollControls>
+          </Sidebar>
+        ) : null}
 
         <ContentArea>
+          {isMobileViewOnly ? (
+            <MobileMenuToolbar>
+              <MobileMenuSummary>
+                <MobileMenuLabel>Selected Menu</MobileMenuLabel>
+                <MobileMenuValue>{selectedMenuLabel}</MobileMenuValue>
+              </MobileMenuSummary>
+
+              <MenuPickerButton type="button" onClick={() => setIsMenuPickerOpen(true)}>
+                <List size={18} />
+                Select Menu
+              </MenuPickerButton>
+            </MobileMenuToolbar>
+          ) : null}
+
           <HeaderRow>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <HeaderLeft>
               <List />
               <Title>Drive Parameters</Title>
-            </div>
-            <Meta>
-              <span>Menu: {selectedMenu ?? 'All'}</span>
-              <span>Params: {pagedInfo}</span>
-              {loading && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <RotateCw size={18} /> Loading
-                </span>
-              )}
-            </Meta>
+            </HeaderLeft>
+
+            {isDualMotorMode ? (
+              <HeaderRightLayout>
+                <HeaderCenterControls>
+                  <HeaderMotorSelector>
+                    <HeaderMotorButton
+                      type="button"
+                      $active={selectedMotor === 2}
+                      onClick={() => setSelectedMotor(2)}
+                    >
+                      Motor #2
+                    </HeaderMotorButton>
+                    <HeaderMotorButton
+                      type="button"
+                      $active={selectedMotor === 1}
+                      onClick={() => setSelectedMotor(1)}
+                    >
+                      Motor #1
+                    </HeaderMotorButton>
+                  </HeaderMotorSelector>
+                </HeaderCenterControls>
+
+                <HeaderRightInfo>{headerMeta}</HeaderRightInfo>
+              </HeaderRightLayout>
+            ) : (
+              headerMeta
+            )}
           </HeaderRow>
 
           <CardsArea>
@@ -290,6 +475,9 @@ const DriveParameters = () => {
                       </SubLabel>
                     </div>
                     <BadgeRow>
+                      {isSearchingAllMenus && param.menu !== undefined ? (
+                        <Badge>Menu {param.menu}</Badge>
+                      ) : null}
                       {readonly ? <Badge $tone="warning">R</Badge> : <Badge>RW</Badge>}
                     </BadgeRow>
                   </CardHeader>
@@ -308,13 +496,13 @@ const DriveParameters = () => {
                       }}
                     >
                       <SubLabel>Unit</SubLabel>
-                      <Unit>{param.unit || '—'}</Unit>
+                      <Unit>{param.unit || '--'}</Unit>
                     </div>
                   </ValueRow>
 
                   <FooterRow>
                     <SubLabel>Default: {formatValue(param.default)}</SubLabel>
-                    <SubLabel>{rangeText ? `Range: ${rangeText}` : 'Range: —'}</SubLabel>
+                    <SubLabel>{rangeText ? `Range: ${rangeText}` : 'Range: --'}</SubLabel>
                   </FooterRow>
                 </Card>
               )
@@ -343,7 +531,9 @@ const DriveParameters = () => {
           liveValue={modalParam ? liveSnapshot[modalParam.id] : undefined}
           onClose={closeModal}
           onSave={handleSave}
+          onScaleFactorChange={handleScaleFactorChange}
           isSaving={saving}
+          forceReadOnly={isViewOnly}
         />
 
         <VirtualKeyboard
@@ -358,6 +548,58 @@ const DriveParameters = () => {
           }}
           onCancel={() => setSearchKeyboard({ visible: false, initialValue: '' })}
         />
+
+        {isMobileViewOnly && isMenuPickerOpen ? (
+          <>
+            <MenuPickerOverlay
+              type="button"
+              aria-label="Close menu picker"
+              onClick={() => setIsMenuPickerOpen(false)}
+            />
+
+            <MenuPickerDialog>
+              <MenuPickerHeader>
+                <MenuPickerTitleGroup>
+                  <MenuPickerTitle>Select Menu</MenuPickerTitle>
+                  <MenuPickerSubtitle>
+                    Pick the parameter menu you want to inspect on this phone screen.
+                  </MenuPickerSubtitle>
+                </MenuPickerTitleGroup>
+
+                <MenuPickerClose
+                  type="button"
+                  aria-label="Close menu picker"
+                  onClick={() => setIsMenuPickerOpen(false)}
+                >
+                  <X size={18} />
+                </MenuPickerClose>
+              </MenuPickerHeader>
+
+              <MenuPickerList>
+                {menus.map((menu) => {
+                  const menuNum = parseMenuNumber(menu.menu)
+                  const active = menuNum === selectedMenu
+
+                  return (
+                    <MenuPickerItem
+                      key={`mobile-menu-${menu.menu}`}
+                      type="button"
+                      $active={active}
+                      onClick={() => {
+                        setSelectedMenu(menuNum)
+                        setPage(1)
+                        setIsMenuPickerOpen(false)
+                      }}
+                    >
+                      <MenuPickerItemTitle>{menu.name}</MenuPickerItemTitle>
+                      <MenuPickerItemBadge>Menu {menu.menu}</MenuPickerItemBadge>
+                    </MenuPickerItem>
+                  )
+                })}
+              </MenuPickerList>
+            </MenuPickerDialog>
+          </>
+        ) : null}
       </PageWrapper>
     </ScreenLayout>
   )

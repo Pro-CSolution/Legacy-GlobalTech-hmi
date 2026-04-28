@@ -143,6 +143,8 @@ export interface TrendChartProps {
   showLegend?: boolean
   /** Show tooltips on hover */
   showTooltips?: boolean
+  /** Allow dragging a horizontal selection to zoom the X axis */
+  enableXSelectionZoom?: boolean
   /** Show fixed inspector panel with current values */
   showInspector?: boolean
   /** Allow clicking to pin a point for comparison */
@@ -167,6 +169,8 @@ export interface TrendChartProps {
   onDataPointClick?: (point: ChartDataPoint, datasetIndex: number) => void
   /** Called on chart hover */
   onHover?: (event: unknown, elements: unknown[]) => void
+  /** Called after the user selects an X range to zoom */
+  onXSelectionZoom?: (domain: { min: number; max: number }) => void
 }
 
 /** Ref methods exposed by the component */

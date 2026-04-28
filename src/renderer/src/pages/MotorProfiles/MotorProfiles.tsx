@@ -7,8 +7,11 @@ import { getProfiles, createProfile, updateProfile, deleteProfile } from 'servic
 import { HoldButton } from 'components/HoldButton/HoldButton'
 import { ProfileEditorModal } from './components/ProfileEditorModal'
 import { ApplyProfileOverlay } from './components/ApplyProfileOverlay'
+import { ProfileApplyTargetModal } from './components/ProfileApplyTargetModal'
 import * as Icons from 'lucide-react'
 import { ConfirmModal } from 'components/Modal'
+import { useMotorControlModePreference, usePreferredSingleMotorScope } from 'hooks'
+import type { MotorScope } from 'utils/motorDeviceMapping'
 
 // --- Styled Components ---
 
@@ -180,7 +183,12 @@ const MotorProfiles: React.FC = () => {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null)
 
   const [applyingProfile, setApplyingProfile] = useState<Profile | null>(null)
+  const [profileTargetSelection, setProfileTargetSelection] = useState<Profile | null>(null)
+  const [applyTargetMotorScope, setApplyTargetMotorScope] = useState<MotorScope>(1)
   const [profileToDelete, setProfileToDelete] = useState<Profile | null>(null)
+  const [motorControlMode] = useMotorControlModePreference()
+  const preferredSingleMotorScope = usePreferredSingleMotorScope()
+  const isDualMotorMode = motorControlMode === 'dual'
 
   const loadData = async () => {
     setLoading(true)
@@ -234,7 +242,15 @@ const MotorProfiles: React.FC = () => {
   }
 
   const handleApply = (p: Profile) => {
-    setApplyingProfile(p)
+    setApplyTargetMotorScope(preferredSingleMotorScope)
+    setProfileTargetSelection(p)
+  }
+
+  const handleConfirmApplyTarget = (motorScope: MotorScope) => {
+    if (!profileTargetSelection) return
+    setApplyTargetMotorScope(motorScope)
+    setApplyingProfile(profileTargetSelection)
+    setProfileTargetSelection(null)
   }
 
   // Pagination Logic
@@ -323,6 +339,7 @@ const MotorProfiles: React.FC = () => {
         {applyingProfile && (
           <ApplyProfileOverlay
             profile={applyingProfile}
+            targetMotorScope={applyTargetMotorScope}
             onClose={() => {
               setApplyingProfile(null)
               loadData() // Reload to update 'last used'
@@ -330,6 +347,15 @@ const MotorProfiles: React.FC = () => {
             onCancel={() => setApplyingProfile(null)}
           />
         )}
+
+        <ProfileApplyTargetModal
+          isOpen={!!profileTargetSelection}
+          profileName={profileTargetSelection?.name ?? ''}
+          initialMotorScope={applyTargetMotorScope}
+          isDualMotorMode={isDualMotorMode}
+          onCancel={() => setProfileTargetSelection(null)}
+          onConfirm={handleConfirmApplyTarget}
+        />
 
         <ConfirmModal
           isOpen={!!profileToDelete}

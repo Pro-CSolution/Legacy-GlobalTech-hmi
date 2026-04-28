@@ -4,6 +4,7 @@ import { X, Search, Plus, Trash2, AlertCircle } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Profile, ProfileParameter } from 'types/profile'
 import { DriveParameter } from 'types/drive'
+import { getErrorMessage, isAxiosErrorLike } from 'types/errors'
 import { getDriveParameters } from 'services/driveService'
 import * as Icons from 'lucide-react'
 import VirtualKeyboard from 'components/VirtualKeyboard/VirtualKeyboard'
@@ -451,6 +452,39 @@ interface ProfileEditorModalProps {
   initialProfile?: Profile | null
 }
 
+const getProfileSaveErrorMessage = (error: unknown): string => {
+  if (isAxiosErrorLike(error)) {
+    const data = error.response?.data
+
+    if (typeof data === 'string' && data.trim()) {
+      return data
+    }
+
+    if (data && typeof data === 'object') {
+      const detail = (data as Record<string, unknown>).detail
+      if (typeof detail === 'string' && detail.trim()) {
+        return detail
+      }
+
+      if (Array.isArray(detail)) {
+        const messages = detail
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null
+            const msg = (item as Record<string, unknown>).msg
+            return typeof msg === 'string' ? msg : null
+          })
+          .filter((msg): msg is string => Boolean(msg))
+
+        if (messages.length > 0) {
+          return messages.join('\n')
+        }
+      }
+    }
+  }
+
+  return getErrorMessage(error, 'Failed to save profile')
+}
+
 export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   isOpen,
   onClose,
@@ -592,7 +626,9 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       onClose()
     } catch (err) {
       console.error('Save profile failed', err)
-      alert('Failed to save profile')
+      const message = getProfileSaveErrorMessage(err)
+      setNotice({ tone: 'error', message })
+      alert(message)
     } finally {
       setSaving(false)
       savingRef.current = false

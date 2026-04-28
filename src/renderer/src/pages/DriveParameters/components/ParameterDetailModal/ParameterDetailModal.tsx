@@ -1,4 +1,4 @@
-import { FC, useEffect, useMemo, useState } from 'react'
+import { ChangeEvent, FC, useEffect, useMemo, useState } from 'react'
 import ReactModal from 'react-modal'
 import { ShieldAlert, Edit2 } from 'lucide-react'
 import { DriveParameter } from 'types/drive'
@@ -22,6 +22,8 @@ import {
   EditArea,
   OptionArea,
   FakeInput,
+  SelectInput,
+  InlineMessage,
   OptionList,
   OptionButton,
   ModalFooter,
@@ -34,7 +36,9 @@ interface ParameterDetailModalProps {
   liveValue: unknown
   onClose: () => void
   onSave: (value: number) => Promise<void>
+  onScaleFactorChange: (scaleFactor: number) => Promise<void>
   isSaving: boolean
+  forceReadOnly?: boolean
 }
 
 const ATTRIBUTE_DESCRIPTIONS: Record<string, string> = {
@@ -48,6 +52,8 @@ const ATTRIBUTE_DESCRIPTIONS: Record<string, string> = {
   X: 'Excluded from CRC'
 }
 
+const SCALE_FACTOR_OPTIONS = [1, 10, 100, 1000]
+
 const formatValue = (value: unknown): string => {
   if (value === null || value === undefined) return '-'
   return String(value)
@@ -59,12 +65,17 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
   liveValue,
   onClose,
   onSave,
-  isSaving
+  onScaleFactorChange,
+  isSaving,
+  forceReadOnly = false
 }) => {
   const [editValue, setEditValue] = useState<string>('')
+  const [scaleFactor, setScaleFactor] = useState<number>(100)
   const [keyboardVisible, setKeyboardVisible] = useState(false)
   const [keyboardMode, setKeyboardMode] = useState<'numeric' | 'alpha'>('numeric')
   const [writeError, setWriteError] = useState<string | null>(null)
+  const [scaleSaving, setScaleSaving] = useState(false)
+  const [scaleMessage, setScaleMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   // Reset state cuando cambia el parámetro (solo una vez por apertura)
   useEffect(() => {
@@ -76,11 +87,21 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
             ? String(parameter.default)
             : ''
       setEditValue(initial)
+      setScaleFactor(parameter.scale_factor)
+      setWriteError(null)
+      setScaleMessage(null)
+      setScaleSaving(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, parameter?.id])
 
-  const isReadOnly = !!parameter?.attributes?.some((attr) => attr === 'R')
+  useEffect(() => {
+    if (parameter) {
+      setScaleFactor(parameter.scale_factor)
+    }
+  }, [parameter?.scale_factor])
+
+  const isReadOnly = forceReadOnly || !!parameter?.attributes?.some((attr) => attr === 'R')
   const parsedOptions = useMemo(() => {
     if (!parameter) return []
     if (parameter.options && parameter.options.length) return parameter.options
@@ -110,6 +131,14 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
     setWriteError(null)
 
     const targetValue = Number(editValue)
+    const numericRange = parameter.range_numeric
+    const belowMin = numericRange?.min !== undefined && targetValue < numericRange.min
+    const aboveMax = numericRange?.max !== undefined && targetValue > numericRange.max
+
+    if (!Number.isNaN(targetValue) && (belowMin || aboveMax)) {
+      setWriteError(`Out of range (${numericRange?.min ?? '-'} to ${numericRange?.max ?? '-'})`)
+      return
+    }
 
     if (!Number.isNaN(targetValue)) {
       onSave(targetValue).catch((err: unknown) => {
@@ -127,7 +156,32 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
 
   const handleKeyboardConfirm = (val: string) => {
     setEditValue(val)
+    setWriteError(null)
     setKeyboardVisible(false)
+  }
+
+  const handleScaleFactorSelect = async (event: ChangeEvent<HTMLSelectElement>) => {
+    const nextScaleFactor = Number(event.target.value)
+    const previousScaleFactor = scaleFactor
+
+    if (Number.isNaN(nextScaleFactor) || nextScaleFactor === previousScaleFactor) {
+      return
+    }
+
+    setScaleFactor(nextScaleFactor)
+    setScaleSaving(true)
+    setScaleMessage(null)
+
+    try {
+      await onScaleFactorChange(nextScaleFactor)
+      setScaleMessage({ tone: 'success', text: 'Scale factor updated.' })
+    } catch (err) {
+      const message = (err as Error)?.message || 'Failed to update scale factor'
+      setScaleFactor(previousScaleFactor)
+      setScaleMessage({ tone: 'error', text: message })
+    } finally {
+      setScaleSaving(false)
+    }
   }
 
   return (
@@ -167,7 +221,7 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
           </ModalTitleGroup>
           <StatusBadge $tone={isReadOnly ? 'warning' : 'success'}>
             {isReadOnly ? <ShieldAlert size={18} /> : <Edit2 size={18} />}
-            {isReadOnly ? 'Read Only' : 'Editable'}
+            {forceReadOnly ? 'View Only' : isReadOnly ? 'Read Only' : 'Editable'}
           </StatusBadge>
         </ModalHeader>
 
@@ -226,6 +280,24 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
               </div>
             </FieldGroup>
 
+            <FieldGroup>
+              <Label>Scale Factor</Label>
+              <SelectInput
+                value={String(scaleFactor)}
+                onChange={handleScaleFactorSelect}
+                disabled={forceReadOnly || scaleSaving}
+              >
+                {SCALE_FACTOR_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </SelectInput>  
+              {scaleMessage && (
+                <InlineMessage $tone={scaleMessage.tone}>{scaleMessage.text}</InlineMessage>
+              )}
+            </FieldGroup>
+
             {!isReadOnly && !hasOptions && (
               <EditArea>
                 <Label style={{ marginBottom: '8px', display: 'block' }}>Set New Value</Label>
@@ -248,7 +320,10 @@ export const ParameterDetailModal: FC<ParameterDetailModalProps> = ({
                 <OptionButton
                   key={opt.value}
                   $active={String(opt.value) === editValue}
-                  onClick={() => setEditValue(String(opt.value))}
+                  onClick={() => {
+                    setEditValue(String(opt.value))
+                    setWriteError(null)
+                  }}
                 >
                   <div style={{ fontWeight: 600 }}>{opt.label}</div>
                   <div style={{ color: '#94a3b8', fontSize: 12 }}>Code: {opt.value}</div>

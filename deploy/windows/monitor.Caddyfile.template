@@ -1,0 +1,43 @@
+(__MONITOR_SITE__) {
+    encode zstd gzip
+
+    header {
+        X-Frame-Options "SAMEORIGIN"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+        X-Robots-Tag "noindex, nofollow, noarchive"
+    }
+
+    @blocked {
+        path /api/v1/commands/* /api/v1/system/* /api/v1/profiles* /api/v1/manual-trend/* /api/v1/drive/* /api/v1/wago-live/* /api/v1/trip-events*
+    }
+    respond @blocked "Forbidden" 403
+
+    handle /api/v1/monitor* {
+        reverse_proxy __BACKEND_ORIGIN__
+    }
+
+    handle /health {
+        reverse_proxy __BACKEND_ORIGIN__
+    }
+
+    handle /ws/socket.io* {
+        reverse_proxy __BACKEND_ORIGIN__
+    }
+
+    handle {
+        root * "__WEB_ROOT__"
+        try_files {path} /index.html
+        file_server
+    }
+}
+
+https://__SITE_HOST__ {
+    tls "__TLS_CERT_PATH__" "__TLS_KEY_PATH__"
+    import __MONITOR_SITE__
+}
+
+http://:8088 {
+    bind 127.0.0.1
+    import __MONITOR_SITE__
+}

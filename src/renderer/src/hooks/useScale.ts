@@ -22,9 +22,9 @@ export const useAspectScale = (baseWidth: number, baseHeight: number): UseAspect
       const scaleW = clientWidth / baseWidth
       const scaleH = clientHeight / baseHeight
 
-      // We want to contain the canvas within the viewport, maintaining aspect ratio.
-      // So we take the minimum of the two scale factors.
-      const minScale = Math.min(scaleW, scaleH)
+      // Keep the desktop canvas contained without upscaling past its native 1920x1080 design.
+      // This preserves breathing room on taller displays like 1980x1200 instead of stretching.
+      const minScale = Math.min(scaleW, scaleH, 1)
 
       setScale(minScale)
 

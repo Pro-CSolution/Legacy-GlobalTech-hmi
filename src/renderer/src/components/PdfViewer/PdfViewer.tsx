@@ -46,6 +46,8 @@ function highlightHtml(text: string, pattern: string): string {
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 const FIT_MIN_SCALE = 0.2
 const FIT_MAX_SCALE = 3
+const PAGES_PER_VIEW = 2
+const PAGE_GAP_PX = 24
 const FIT_PADDING_PX = 24 // internal viewer padding + safety
 
 export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
@@ -54,7 +56,7 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
   const [pageNumber, setPageNumber] = useState(initialPage)
 
   const [scale, setScale] = useState(1)
-  const [fitToWidth, setFitToWidth] = useState(true)
+  const [fitToWidth, setFitToWidth] = useState(false)
   const [pageWidthAtScale1, setPageWidthAtScale1] = useState<number | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
 
@@ -82,13 +84,24 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
   useEffect(() => {
     if (!fitToWidth) return
     if (!pageWidthAtScale1 || containerWidth <= 0) return
-    const target = (containerWidth - FIT_PADDING_PX) / pageWidthAtScale1
+    const visiblePageCount = Math.min(PAGES_PER_VIEW, Math.max(1, numPages - pageNumber + 1))
+    const spreadGap = visiblePageCount > 1 ? PAGE_GAP_PX : 0
+    const target =
+      (containerWidth - FIT_PADDING_PX - spreadGap) / (pageWidthAtScale1 * visiblePageCount)
     setScale(clamp(target, FIT_MIN_SCALE, FIT_MAX_SCALE))
-  }, [fitToWidth, pageWidthAtScale1, containerWidth])
+  }, [fitToWidth, pageWidthAtScale1, containerWidth, numPages, pageNumber])
 
   useEffect(() => {
     setPageNumber(initialPage)
   }, [initialPage, fileUrl])
+
+  const visiblePages = useMemo(() => {
+    if (numPages <= 0) return [pageNumber]
+
+    return Array.from({ length: PAGES_PER_VIEW }, (_, index) => pageNumber + index).filter(
+      (page) => page <= numPages
+    )
+  }, [numPages, pageNumber])
 
   // Search Logic
   const performSearch = useCallback(
@@ -143,12 +156,16 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
   }
 
   const zoomPct = useMemo(() => `${Math.round(scale * 100)}%`, [scale])
+  const visiblePageLabel = useMemo(() => {
+    if (visiblePages.length <= 1) return String(pageNumber)
+    return `${visiblePages[0]}-${visiblePages[visiblePages.length - 1]}`
+  }, [pageNumber, visiblePages])
 
   const canPrev = pageNumber > 1
-  const canNext = numPages > 0 && pageNumber < numPages
+  const canNext = numPages > 0 && pageNumber + visiblePages.length - 1 < numPages
 
-  const goPrev = () => setPageNumber((p) => clamp(p - 1, 1, Math.max(1, numPages || 1)))
-  const goNext = () => setPageNumber((p) => clamp(p + 1, 1, Math.max(1, numPages || 1)))
+  const goPrev = () => setPageNumber((p) => clamp(p - PAGES_PER_VIEW, 1, Math.max(1, numPages || 1)))
+  const goNext = () => setPageNumber((p) => clamp(p + PAGES_PER_VIEW, 1, Math.max(1, numPages || 1)))
 
   const zoomOut = () => {
     setFitToWidth(false)
@@ -167,7 +184,9 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
 
     // Prefer cached page width if we have it.
     if (pageWidthAtScale1) {
-      const target = (containerWidth - FIT_PADDING_PX) / pageWidthAtScale1
+      const spreadGap = visiblePages.length > 1 ? PAGE_GAP_PX : 0
+      const target =
+        (containerWidth - FIT_PADDING_PX - spreadGap) / (pageWidthAtScale1 * visiblePages.length)
       setScale(clamp(target, FIT_MIN_SCALE, FIT_MAX_SCALE))
       return
     }
@@ -178,7 +197,8 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
       const page = await pdfDoc.getPage(pageNumber)
       const w = page.getViewport({ scale: 1 }).width
       setPageWidthAtScale1(w)
-      const target = (containerWidth - FIT_PADDING_PX) / w
+      const spreadGap = visiblePages.length > 1 ? PAGE_GAP_PX : 0
+      const target = (containerWidth - FIT_PADDING_PX - spreadGap) / (w * visiblePages.length)
       setScale(clamp(target, FIT_MIN_SCALE, FIT_MAX_SCALE))
     } catch {
       // Non-fatal: keep current zoom.
@@ -194,6 +214,7 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
   const onDocumentLoadSuccess = (pdf: PDFDocumentProxy) => {
     setNumPages(pdf.numPages)
     setPdfDoc(pdf)
+    setPageNumber((current) => clamp(current, 1, Math.max(1, pdf.numPages)))
   }
 
   // Custom renderer for text layer to highlight search terms
@@ -214,7 +235,7 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
           </S.ToolButton>
           <S.PageIndicator onClick={() => setKbVisible(true)} aria-label="Jump to page">
             <Hash size={18} />
-            {pageNumber} / {numPages || '-'}
+            {visiblePageLabel} / {numPages || '-'}
           </S.PageIndicator>
           <S.ToolButton onClick={goNext} disabled={!canNext} aria-label="Next page">
             <ChevronRight size={20} />
@@ -273,20 +294,24 @@ export const PdfViewer = ({ fileUrl, initialPage = 1 }: Props) => {
           loading={<S.InfoText>Loading PDF…</S.InfoText>}
           error={<S.InfoText>Failed to load PDF</S.InfoText>}
         >
-          <S.PageWrap>
-            <Page
-              pageNumber={pageNumber}
-              scale={scale}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              loading=""
-              customTextRenderer={searchText ? textRenderer : undefined}
-              onLoadSuccess={(page) => {
-                const w = page.getViewport({ scale: 1 }).width
-                setPageWidthAtScale1(w)
-              }}
-            />
-          </S.PageWrap>
+          <S.PageSpread>
+            {visiblePages.map((visiblePageNumber) => (
+              <S.PageWrap key={visiblePageNumber}>
+                <Page
+                  pageNumber={visiblePageNumber}
+                  scale={scale}
+                  renderTextLayer={true}
+                  renderAnnotationLayer={true}
+                  loading=""
+                  customTextRenderer={searchText ? textRenderer : undefined}
+                  onLoadSuccess={(page) => {
+                    const w = page.getViewport({ scale: 1 }).width
+                    setPageWidthAtScale1(w)
+                  }}
+                />
+              </S.PageWrap>
+            ))}
+          </S.PageSpread>
         </Document>
       </S.Viewer>
 

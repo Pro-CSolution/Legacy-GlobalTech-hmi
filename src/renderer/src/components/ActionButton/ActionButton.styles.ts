@@ -5,54 +5,70 @@ import { Theme } from 'styles/theme'
 export const getButtonStyles = (color: string, active: boolean, theme: Theme): RuleSet<object> => {
   const colors = {
     green: {
-      bg: theme.colors.status.running,
-      hover: '#059669', // Emerald 600
-      shadow: '#064e3b' // Emerald 900
+      bg: 'linear-gradient(180deg, #3da676 0%, #2f8a63 100%)',
+      activeBg: 'linear-gradient(180deg, #47b684 0%, #318c66 100%)',
+      hover: 'linear-gradient(180deg, #45b182 0%, #338e68 100%)',
+      shadow: 'rgba(15, 49, 36, 0.46)',
+      border: 'rgba(151, 242, 168, 0.24)',
+      glow: 'rgba(75, 210, 123, 0.22)'
     },
     red: {
-      bg: theme.colors.status.alarm,
-      hover: '#e11d48', // Rose 600
-      shadow: '#881337' // Rose 900
+      bg: 'linear-gradient(180deg, #b95a5a 0%, #994848 100%)',
+      activeBg: 'linear-gradient(180deg, #c76666 0%, #a14c4c 100%)',
+      hover: 'linear-gradient(180deg, #c76565 0%, #a24b4b 100%)',
+      shadow: 'rgba(67, 23, 23, 0.46)',
+      border: 'rgba(255, 106, 106, 0.24)',
+      glow: 'rgba(255, 106, 106, 0.2)'
     },
     yellow: {
-      bg: theme.colors.status.warning,
-      hover: '#d97706', // Amber 600
-      shadow: '#78350f' // Amber 900
+      bg: 'linear-gradient(180deg, #c99a39 0%, #a97c24 100%)',
+      activeBg: 'linear-gradient(180deg, #d4a74a 0%, #b4842a 100%)',
+      hover: 'linear-gradient(180deg, #d2a345 0%, #b0822a 100%)',
+      shadow: 'rgba(74, 51, 11, 0.42)',
+      border: 'rgba(255, 214, 107, 0.24)',
+      glow: 'rgba(255, 214, 107, 0.18)'
     },
     slate: {
-      bg: theme.colors.background.tertiary,
-      hover: theme.colors.background.secondary,
-      shadow: '#0f172a' // Slate 900
+      bg: 'linear-gradient(180deg, rgba(46, 64, 99, 0.95) 0%, rgba(35, 49, 78, 0.95) 100%)',
+      activeBg: theme.colors.gradients.active,
+      hover:
+        'linear-gradient(180deg, rgba(56, 76, 116, 0.96) 0%, rgba(40, 57, 90, 0.96) 100%)',
+      shadow: 'rgba(8, 15, 30, 0.4)',
+      border: 'rgba(130, 180, 255, 0.16)',
+      glow: 'rgba(76, 164, 255, 0.2)'
     }
   }
 
   const c = colors[color as keyof typeof colors] || colors.slate
 
   return css`
-    background-color: ${c.bg};
-    border-bottom: 4px solid ${c.shadow}80;
+    background: ${active ? c.activeBg : c.bg};
+    border: 1px solid ${active ? 'rgba(130, 200, 255, 0.28)' : c.border};
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 12px 22px ${c.shadow};
     color: white;
 
     &:hover:not(:disabled) {
-      background-color: ${c.hover};
+      background: ${active ? c.activeBg : c.hover};
     }
 
     &:active:not(:disabled) {
-      border-bottom-width: 0;
-      transform: translateY(4px);
+      transform: translateY(2px);
     }
 
     ${active &&
     css`
       box-shadow:
-        0 0 0 2px ${theme.colors.background.primary},
-        0 0 0 4px white;
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        0 0 0 1px rgba(130, 200, 255, 0.12),
+        0 0 18px ${c.glow};
     `}
 
     &:disabled {
-      opacity: 0.5;
+      opacity: 0.45;
       cursor: not-allowed;
-      filter: grayscale(1);
+      filter: saturate(0.8);
     }
   `
 }
@@ -67,17 +83,18 @@ export const Button = styled.button.withConfig({
   width: 100%;
   padding: 12px 16px;
   border-radius: ${({ theme }) => theme.borderRadius.md};
-  border: none;
+  border: 1px solid transparent;
+  font-family: ${({ theme }) => theme.typography.displayFamily};
   font-weight: ${({ theme }) => theme.typography.weights.bold};
   text-transform: uppercase;
   font-size: ${({ theme }) => theme.typography.sizes.lg};
-  letter-spacing: 1px;
+  letter-spacing: 0.08em;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: all 0.1s ease;
+  transition: all 0.18s ease;
   overflow: hidden;
 
   ${(props) => getPositionStyles(props)}

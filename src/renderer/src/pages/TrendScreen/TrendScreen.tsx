@@ -1,15 +1,37 @@
-import { Profiler, useCallback, useEffect, useRef, useState } from 'react'
+import { Profiler, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Activity,
+  CalendarRange,
+  ChartLine,
+  ChevronRight,
+  Filter,
+  Mail,
+  SlidersHorizontal,
+  X,
+  ZoomOut
+} from 'lucide-react'
 import { TrendChart, TrendChartRef, Dataset } from 'components/TrendChart'
 import { ScreenLayout } from 'layouts'
 import { sendTrendReportEmail } from 'services'
-import type { ClientMotorInfo, TrendReportSeries } from 'services'
+import type {
+  ClientMotorInfo,
+  DualClientMotorInfo,
+  TrendReportSeries,
+  TrendReportWorkbookSheet,
+  TrendReportWorkbookSeries
+} from 'services'
 import { runReportSend } from 'hooks/useReportSendStatus'
+import { useMotorControlModePreference } from 'hooks/useMotorControlModePreference'
+import { useAccessMode, useIsViewportBelow } from 'hooks'
 import { useTheme } from 'styled-components'
 import { getErrorMessage, isAxiosErrorLike } from 'types/errors'
 import { debugLog, isDebugEnabled } from 'utils/debug'
-import { LegendBox } from './components/LegendBox'
+import { loadClientMotorInfo, loadDualClientMotorInfo } from 'utils/clientMotorInfoStorage'
+import { CurrentValuesPanel } from './components/CurrentValuesPanel'
 import { ManualPanel } from './components/ManualPanel'
 import { ReportPanel } from './components/ReportPanel'
+import { ScalePanel } from './components/ScalePanel'
+import { TrendRangeNavigator } from './components/TrendRangeNavigator'
 import { TrendToolbar } from './components/TrendToolbar'
 import { VariablesPanel } from './components/VariablesPanel'
 import { TIME_RANGES, nowLocalInput } from './constants'
@@ -28,85 +50,6 @@ const stripDataUrlPrefix = (dataUrl: string): string => {
   return idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl
 }
 
-const CLIENT_MOTOR_INFO_STORAGE_KEY = 'client_motor_info'
-const CLIENT_MOTOR_MAX_EXTRAS = 15
-
-const createBlankClientMotorInfo = (): ClientMotorInfo => ({
-  customer: '',
-  model: '',
-  catalog: '',
-  hp: '',
-  rpm: '',
-  volts: '',
-  amps: '',
-  hz: '',
-  frame: '',
-  duty: '',
-  enclosure: '',
-  tempRise: '',
-  serviceFactor: '',
-  efficiency: '',
-  inverterRating: '',
-  extras: []
-})
-
-const loadClientMotorInfoForReport = (): ClientMotorInfo => {
-  const fallback = createBlankClientMotorInfo()
-  if (typeof window === 'undefined') return fallback
-
-  try {
-    const raw = localStorage.getItem(CLIENT_MOTOR_INFO_STORAGE_KEY)
-    if (!raw) return fallback
-
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return fallback
-    const obj = parsed as Record<string, unknown>
-
-    const readString = (key: string): string => {
-      const v = obj[key]
-      if (typeof v === 'string') return v
-      if (typeof v === 'number' && Number.isFinite(v)) return String(v)
-      return ''
-    }
-
-    const extrasRaw = obj.extras
-    const extras = Array.isArray(extrasRaw)
-      ? extrasRaw
-          .map((item) => {
-            if (!item || typeof item !== 'object') return null
-            const row = item as Record<string, unknown>
-            const label = typeof row.label === 'string' ? row.label.trim() : ''
-            const value = typeof row.value === 'string' ? row.value.trim() : ''
-            if (!label) return null
-            return { label, value }
-          })
-          .filter((v): v is { label: string; value: string } => Boolean(v))
-          .slice(0, CLIENT_MOTOR_MAX_EXTRAS)
-      : []
-
-    return {
-      customer: readString('customer'),
-      model: readString('model'),
-      catalog: readString('catalog'),
-      hp: readString('hp'),
-      rpm: readString('rpm'),
-      volts: readString('volts'),
-      amps: readString('amps'),
-      hz: readString('hz'),
-      frame: readString('frame'),
-      duty: readString('duty'),
-      enclosure: readString('enclosure'),
-      tempRise: readString('tempRise'),
-      serviceFactor: readString('serviceFactor'),
-      efficiency: readString('efficiency'),
-      inverterRating: readString('inverterRating'),
-      extras
-    }
-  } catch {
-    return fallback
-  }
-}
-
 const sanitizeFilenamePart = (value: string): string =>
   value
     .replace(/[\\/:*?"<>|]+/g, '-')
@@ -116,12 +59,28 @@ const sanitizeFilenamePart = (value: string): string =>
 const formatIsoForFilename = (iso: string): string =>
   iso.replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-')
 
-const formatEpochSecondsToLocalTime = (seconds: number): string => {
+const formatEpochSecondsForSpan = (seconds: number, spanSec: number): string => {
   const date = new Date(seconds * 1000)
-  return date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
+
+  if (spanSec <= 24 * 60 * 60) {
+    return date.toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  if (spanSec <= 7 * 24 * 60 * 60) {
+    return date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  return date.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric'
   })
 }
 
@@ -164,6 +123,16 @@ type SendReportResult = {
   message: string
 }
 
+type TrendPanelKey = 'variables' | 'manual' | 'scale' | 'currentValues' | 'report'
+
+type ReportReadyDataset = Dataset & {
+  parameterId?: string
+  seriesId?: number
+  isManual?: boolean
+  unit?: string | null
+  label?: string
+}
+
 const getFastApiErrorDetail = (error: unknown): string | null => {
   if (!isAxiosErrorLike(error)) return null
 
@@ -192,23 +161,109 @@ const getFastApiErrorDetail = (error: unknown): string | null => {
   return null
 }
 
+const sanitizeSheetName = (value: string, fallback: string): string => {
+  const cleaned = value
+    .replace(/[\[\]:*?/\\]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^'+|'+$/g, '')
+
+  return (cleaned || fallback).slice(0, 31)
+}
+
+const buildWorkbookSeries = (
+  dataset: ReportReadyDataset,
+  xMin: number,
+  xMax: number
+): TrendReportWorkbookSeries | null => {
+  const label = dataset.label?.trim() || 'Series'
+  const unit = dataset.unit ?? null
+  const points = (dataset.data || [])
+    .filter(
+      (point) =>
+        Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= xMin && point.x <= xMax
+    )
+    .map((point) => ({ x: point.x, y: point.y }))
+    .sort((a, b) => a.x - b.x)
+
+  if (dataset.isManual === true) {
+    if (typeof dataset.seriesId !== 'number') return null
+    return {
+      kind: 'manual',
+      seriesId: dataset.seriesId,
+      label,
+      unit,
+      points
+    }
+  }
+
+  if (typeof dataset.parameterId !== 'string') return null
+
+  return {
+    kind: 'sensor',
+    parameterId: dataset.parameterId,
+    label,
+    unit,
+    points
+  }
+}
+
+const buildWorkbookSheet = (
+  name: string,
+  datasets: ReportReadyDataset[],
+  xMin: number,
+  xMax: number
+): TrendReportWorkbookSheet => ({
+  name: sanitizeSheetName(name, 'Trend Report'),
+  series: datasets
+    .map((dataset) => buildWorkbookSeries(dataset, xMin, xMax))
+    .filter((series): series is TrendReportWorkbookSeries => Boolean(series))
+})
+
 const TrendScreen = () => {
   void useTheme()
+  const { isViewOnly } = useAccessMode()
+  const isMobileViewOnly = isViewOnly && useIsViewportBelow(768)
+  const [motorControlMode] = useMotorControlModePreference()
   const perfEnabled = isDebugEnabled('trend.perf')
   const {
     timeRange,
+    effectiveTimeRange,
+    rangeMode,
+    customRangeDraft,
+    customRangeError,
+    activeRangeSummary,
+    canApplyCustomRange,
+    maxRangeDateTime,
     setTimeRange,
+    setCustomRangeDraft,
+    applyCustomRange,
+    clearCustomRange,
     isConfigOpen,
     setIsConfigOpen,
     isReportOpen,
     setIsReportOpen,
     isManualPanelOpen,
     setIsManualPanelOpen,
+    isScalePanelOpen,
+    setIsScalePanelOpen,
     selectedVarIds,
     handleToggleVar,
     combinedDatasets,
+    motorOneCombinedDatasets,
+    motorTwoCombinedDatasets,
     combinedXDomain,
     currentValues,
+    currentValuesByMotor,
+    trendColorPalette,
+    getEffectiveSensorColor,
+    getEffectiveManualColor,
+    setSeriesColorOverride,
+    clearSeriesColorOverride,
+    yAxisScale,
+    setYAxisScale,
+    yAxisScaleError,
+    resolvedYAxisScale,
     manualSeries,
     selectedManualIds,
     handleToggleManualSeries,
@@ -240,20 +295,101 @@ const TrendScreen = () => {
     reportNote,
     setReportNote,
     privateMode,
-    setPrivateMode
+    setPrivateMode,
+    excelSampleIntervalValue,
+    setExcelSampleIntervalValue,
+    excelSampleIntervalUnit,
+    setExcelSampleIntervalUnit
   } = useTrendScreenState()
 
   const selectedCount = selectedVarIds.length + selectedManualIds.length
+  const isDualMotorMode = motorControlMode === 'dual'
   const chartRef = useRef<TrendChartRef>(null)
   const exportChartRef = useRef<TrendChartRef>(null)
   const [exportRequest, setExportRequest] = useState<HiddenExportRequest | null>(null)
+  const [zoomXDomain, setZoomXDomain] = useState<{ min: number; max: number } | null>(null)
+  const [isCurrentValuesOpen, setIsCurrentValuesOpen] = useState(false)
+  const [isRangeDialogOpen, setIsRangeDialogOpen] = useState(false)
+  const [mobileTrendScope, setMobileTrendScope] = useState<1 | 2 | 'single' | null>(null)
   const exportResolveRef = useRef<((value: string | null) => void) | null>(null)
   const renderStartRef = useRef<number>(perfNow())
   renderStartRef.current = perfNow()
 
+  const closeAllPanels = useCallback(() => {
+    setIsConfigOpen(false)
+    setIsManualPanelOpen(false)
+    setIsScalePanelOpen(false)
+    setIsCurrentValuesOpen(false)
+    setIsReportOpen(false)
+  }, [setIsConfigOpen, setIsManualPanelOpen, setIsScalePanelOpen, setIsReportOpen])
+
+  const openExclusivePanel = useCallback(
+    (panel: TrendPanelKey) => {
+      closeAllPanels()
+
+      switch (panel) {
+        case 'variables':
+          setIsConfigOpen(true)
+          break
+        case 'manual':
+          setIsManualPanelOpen(true)
+          break
+        case 'scale':
+          setIsScalePanelOpen(true)
+          break
+        case 'currentValues':
+          setIsCurrentValuesOpen(true)
+          break
+        case 'report':
+          setIsReportOpen(true)
+          break
+      }
+    },
+    [closeAllPanels, setIsConfigOpen, setIsManualPanelOpen, setIsScalePanelOpen, setIsReportOpen]
+  )
+
+  const toggleExclusivePanel = useCallback(
+    (panel: TrendPanelKey) => {
+      if (isViewOnly && panel === 'manual') {
+        return
+      }
+
+      const isOpen =
+        panel === 'variables'
+          ? isConfigOpen
+          : panel === 'manual'
+            ? isManualPanelOpen
+            : panel === 'scale'
+              ? isScalePanelOpen
+              : panel === 'currentValues'
+                ? isCurrentValuesOpen
+                : isReportOpen
+
+      if (isOpen) {
+        closeAllPanels()
+        return
+      }
+
+      openExclusivePanel(panel)
+    },
+    [
+      closeAllPanels,
+      openExclusivePanel,
+      isViewOnly,
+      isConfigOpen,
+      isManualPanelOpen,
+      isScalePanelOpen,
+      isCurrentValuesOpen,
+      isReportOpen
+    ]
+  )
+
   useEffect(() => {
     debugLog('trend.screen', 'state snapshot', {
       timeRange,
+      effectiveTimeRange,
+      rangeMode,
+      activeRangeSummary,
       selected: {
         sensors: selectedVarIds.length,
         manual: selectedManualIds.length,
@@ -270,12 +406,201 @@ const TrendScreen = () => {
     })
   }, [
     timeRange,
+    effectiveTimeRange,
+    rangeMode,
+    activeRangeSummary,
     selectedVarIds.length,
     selectedManualIds.length,
     selectedCount,
     combinedDatasets.length,
     combinedXDomain
   ])
+
+  useEffect(() => {
+    if (!combinedXDomain) {
+      setZoomXDomain(null)
+      return
+    }
+
+    setZoomXDomain((prev) => {
+      if (!prev) return prev
+
+      const min = Math.max(prev.min, combinedXDomain.min)
+      const max = Math.min(prev.max, combinedXDomain.max)
+      if (!(max > min)) return null
+      if (min === prev.min && max === prev.max) return prev
+
+      return { min, max }
+    })
+  }, [combinedXDomain])
+
+  const effectiveXDomain = useMemo(
+    () => zoomXDomain ?? combinedXDomain,
+    [zoomXDomain, combinedXDomain]
+  )
+
+  const formatXAxisTick = useCallback(
+    (val: unknown): string => {
+      const spanSec =
+        effectiveXDomain && Number.isFinite(effectiveXDomain.max - effectiveXDomain.min)
+          ? Math.max(effectiveXDomain.max - effectiveXDomain.min, 60)
+          : Math.max(effectiveTimeRange * 60, 60)
+
+      return formatEpochSecondsForSpan(val as number, spanSec)
+    },
+    [effectiveTimeRange, effectiveXDomain]
+  )
+
+  const handleSelectTimeRange = useCallback(
+    (minutes: number) => {
+      setZoomXDomain(null)
+      setTimeRange(minutes)
+    },
+    [setTimeRange]
+  )
+
+  const handleChangeRangeStart = useCallback(
+    (value: string) => {
+      setCustomRangeDraft('start', value)
+    },
+    [setCustomRangeDraft]
+  )
+
+  const handleChangeRangeEnd = useCallback(
+    (value: string) => {
+      setCustomRangeDraft('end', value)
+    },
+    [setCustomRangeDraft]
+  )
+
+  const handleApplyCustomRange = useCallback(() => {
+    if (!applyCustomRange()) return
+    setZoomXDomain(null)
+  }, [applyCustomRange])
+
+  const handleClearCustomRange = useCallback(() => {
+    setZoomXDomain(null)
+    clearCustomRange()
+  }, [clearCustomRange])
+
+  const handleOpenRangeDialog = useCallback(() => {
+    closeAllPanels()
+    setIsRangeDialogOpen(true)
+  }, [closeAllPanels])
+
+  const handleCloseRangeDialog = useCallback(() => {
+    setIsRangeDialogOpen(false)
+  }, [])
+
+  const handleSelectPresetRangeAndClose = useCallback(
+    (minutes: number) => {
+      handleSelectTimeRange(minutes)
+      setIsRangeDialogOpen(false)
+    },
+    [handleSelectTimeRange]
+  )
+
+  const handleApplyCustomRangeAndClose = useCallback(() => {
+    if (!applyCustomRange()) return
+    setZoomXDomain(null)
+    setIsRangeDialogOpen(false)
+  }, [applyCustomRange])
+
+  const handleUsePresetAndClose = useCallback(() => {
+    setZoomXDomain(null)
+    clearCustomRange()
+    setIsRangeDialogOpen(false)
+  }, [clearCustomRange])
+
+  const handleOpenMobileTrend = useCallback(
+    (scope: 1 | 2 | 'single') => {
+      closeAllPanels()
+      setIsRangeDialogOpen(false)
+      setMobileTrendScope(scope)
+    },
+    [closeAllPanels]
+  )
+
+  const handleCloseMobileTrend = useCallback(() => {
+    setMobileTrendScope(null)
+  }, [])
+
+  const handleOpenMobilePanel = useCallback(
+    (panel: Exclude<TrendPanelKey, 'manual'>) => {
+      setIsRangeDialogOpen(false)
+      setMobileTrendScope(null)
+      toggleExclusivePanel(panel)
+    },
+    [toggleExclusivePanel]
+  )
+
+  useEffect(() => {
+    if (isMobileViewOnly) return
+
+    setIsRangeDialogOpen(false)
+    setMobileTrendScope(null)
+  }, [isMobileViewOnly])
+
+  const chartScales = useMemo(
+    () => ({
+      x: {
+        min: effectiveXDomain?.min,
+        max: effectiveXDomain?.max,
+        ticks: {
+          callback: formatXAxisTick
+        }
+      },
+      y: {
+        min: resolvedYAxisScale?.min,
+        max: resolvedYAxisScale?.max
+      }
+    }),
+    [effectiveXDomain?.min, effectiveXDomain?.max, formatXAxisTick, resolvedYAxisScale]
+  )
+
+  const activeMobileTrend = useMemo(() => {
+    if (mobileTrendScope === 1) {
+      return {
+        title: 'Motor #1 Trend',
+        meta: selectedCount > 0 ? `${selectedCount} series selected` : 'No series selected',
+        datasets: motorOneCombinedDatasets
+      }
+    }
+
+    if (mobileTrendScope === 2) {
+      return {
+        title: 'Motor #2 Trend',
+        meta: selectedCount > 0 ? `${selectedCount} series selected` : 'No series selected',
+        datasets: motorTwoCombinedDatasets
+      }
+    }
+
+    if (mobileTrendScope === 'single') {
+      return {
+        title: 'Trend',
+        meta: selectedCount > 0 ? `${selectedCount} series selected` : 'No series selected',
+        datasets: combinedDatasets
+      }
+    }
+
+    return null
+  }, [
+    combinedDatasets,
+    mobileTrendScope,
+    motorOneCombinedDatasets,
+    motorTwoCombinedDatasets,
+    selectedCount
+  ])
+
+  const presetRangeLabel = useMemo(
+    () => TIME_RANGES.find((range) => range.value === timeRange)?.label ?? `${timeRange} min`,
+    [timeRange]
+  )
+
+  const rangeSummaryText =
+    rangeMode === 'absolute'
+      ? activeRangeSummary ?? 'Custom range selected'
+      : `Preset: ${presetRangeLabel}`
 
   useEffect(() => {
     if (!perfEnabled) return
@@ -375,17 +700,31 @@ const TrendScreen = () => {
 
     const startIso = new Date(startSec * 1000).toISOString()
     const endIso = new Date(endSec * 1000).toISOString()
+    const excelSampleSeconds =
+      excelSampleIntervalUnit === 'minutes'
+        ? excelSampleIntervalValue * 60
+        : excelSampleIntervalValue
 
     const startStamp = formatIsoForFilename(startIso)
     const endStamp = formatIsoForFilename(endIso)
 
     setIsSending(true)
     try {
-      const clientMotorInfo = loadClientMotorInfoForReport()
+      const clientMotorInfo: ClientMotorInfo | undefined = isDualMotorMode
+        ? undefined
+        : loadClientMotorInfo()
+      const dualClientMotorInfo: DualClientMotorInfo | undefined = isDualMotorMode
+        ? loadDualClientMotorInfo()
+        : undefined
 
       console.debug('[report.send] start', {
         recipients: emailList.length,
         range: { startSec, endSec, startIso, endIso },
+        excelSampleSeconds,
+        excelSampleInterval: {
+          value: excelSampleIntervalValue,
+          unit: excelSampleIntervalUnit
+        },
         datasets: combinedDatasets.map((d) => ({
           label: d.label,
           points: d.data?.length ?? 0,
@@ -411,6 +750,30 @@ const TrendScreen = () => {
         series.push({ kind: 'sensor', parameterId, label, unit })
       })
 
+      const workbookSheets: TrendReportWorkbookSheet[] = isDualMotorMode
+        ? [
+            buildWorkbookSheet(
+              'Motor #1 Trend',
+              motorOneCombinedDatasets as ReportReadyDataset[],
+              startSec,
+              endSec
+            ),
+            buildWorkbookSheet(
+              'Motor #2 Trend',
+              motorTwoCombinedDatasets as ReportReadyDataset[],
+              startSec,
+              endSec
+            )
+          ]
+        : [
+            buildWorkbookSheet(
+              'Trend Report',
+              combinedDatasets as ReportReadyDataset[],
+              startSec,
+              endSec
+            )
+          ]
+
       const images: Array<{ filename: string; mimeType: ImageMimeType; contentBase64: string }> = []
 
       const globalFilename = sanitizeFilenamePart(
@@ -418,13 +781,17 @@ const TrendScreen = () => {
       )
 
       const globalDataUrl =
-        chartRef.current?.exportImage({ type: 'image/png' }) ??
+        (!zoomXDomain && !isDualMotorMode
+          ? chartRef.current?.exportImage({ type: 'image/png' })
+          : null) ??
         (await exportChartHidden({
           datasets: combinedDatasets,
           width: 1500,
           height: 600,
           xMin: startSec,
           xMax: endSec,
+          yMin: resolvedYAxisScale?.min,
+          yMax: resolvedYAxisScale?.max,
           type: 'image/png',
           quality: 1
         }))
@@ -444,15 +811,17 @@ const TrendScreen = () => {
         const unitLabel = ds.unit ? ` (${ds.unit})` : ''
         const kindLabel = ds.isManual === true ? 'Manual' : 'Sensor'
 
-        const { yMin, yMax } = computePaddedYRange(ds, startSec, endSec)
+        const seriesYRange = resolvedYAxisScale
+          ? { yMin: resolvedYAxisScale.min, yMax: resolvedYAxisScale.max }
+          : computePaddedYRange(ds, startSec, endSec)
         const dataUrl = await exportChartHidden({
           datasets: [ds],
           width: 1500,
           height: 600,
           xMin: startSec,
           xMax: endSec,
-          yMin,
-          yMax,
+          yMin: seriesYRange.yMin,
+          yMax: seriesYRange.yMax,
           type: 'image/jpeg',
           quality: 1
         })
@@ -462,7 +831,7 @@ const TrendScreen = () => {
             label,
             kind: kindLabel,
             points: ds.data?.length ?? 0,
-            y: { yMin, yMax }
+            y: seriesYRange
           })
           continue
         }
@@ -480,6 +849,15 @@ const TrendScreen = () => {
 
       console.debug('[report.send] payload ready', {
         series: series.length,
+        excelSampleSeconds,
+        excelSampleInterval: {
+          value: excelSampleIntervalValue,
+          unit: excelSampleIntervalUnit
+        },
+        workbookSheets: workbookSheets.map((sheet) => ({
+          name: sheet.name,
+          series: sheet.series.length
+        })),
         images: images.length,
         imageNames: images.map((i) => i.filename)
       })
@@ -488,12 +866,15 @@ const TrendScreen = () => {
         return await sendTrendReportEmail({
           recipients: emailList,
           privateMode,
+          excelSampleSeconds,
           subject: reportSubject,
           note: reportNote,
           timeRange: { start: startIso, end: endIso },
           series,
+          workbookSheets,
           images,
-          clientMotorInfo
+          clientMotorInfo,
+          dualClientMotorInfo
         })
       })
 
@@ -518,220 +899,550 @@ const TrendScreen = () => {
     combinedDatasets,
     combinedXDomain,
     emailList,
+    excelSampleIntervalUnit,
+    excelSampleIntervalValue,
+    isDualMotorMode,
+    motorOneCombinedDatasets,
+    motorTwoCombinedDatasets,
     privateMode,
     reportNote,
     reportSubject,
+    resolvedYAxisScale,
+    zoomXDomain,
     exportChartHidden,
     setIsSending
   ])
 
+  const renderTrendChartCanvas = (
+    chartId: string,
+    datasets: Dataset[],
+    exportTarget = false,
+    panelLabel?: string
+  ) => {
+    const chartNode = perfEnabled ? (
+      <Profiler
+        id={chartId}
+        onRender={(id, phase, actualDuration, baseDuration, startTime, commitTime) => {
+          debugLog('trend.perf', 'React Profiler', {
+            id,
+            phase,
+            actualMs: Math.round(actualDuration),
+            baseMs: Math.round(baseDuration),
+            startTime: Math.round(startTime),
+            commitTime: Math.round(commitTime)
+          })
+        }}
+      >
+        <TrendChart
+          ref={exportTarget ? chartRef : undefined}
+          datasets={datasets}
+          timeWindow={effectiveTimeRange}
+          showLegend={false}
+          showTitle={false}
+          responsive={true}
+          maintainAspectRatio={false}
+          height={'100%'}
+          width={'100%'}
+          enableXSelectionZoom={true}
+          onXSelectionZoom={setZoomXDomain}
+          scales={chartScales}
+        />
+      </Profiler>
+    ) : (
+      <TrendChart
+        ref={exportTarget ? chartRef : undefined}
+        datasets={datasets}
+        timeWindow={effectiveTimeRange}
+        showLegend={false}
+        showTitle={false}
+        responsive={true}
+        maintainAspectRatio={false}
+        height={'100%'}
+        width={'100%'}
+        enableXSelectionZoom={true}
+        onXSelectionZoom={setZoomXDomain}
+        scales={chartScales}
+      />
+    )
+
+    return (
+      <S.ChartCanvasShell>
+        {chartNode}
+
+        {zoomXDomain && exportTarget && (
+          <S.ActionButton
+            $variant="primary"
+            onClick={() => setZoomXDomain(null)}
+            style={{
+              position: 'absolute',
+              top: 16,
+              left: 16,
+              zIndex: 11,
+              justifyContent: 'center'
+            }}
+          >
+            <ZoomOut size={14} />
+            <span>{panelLabel ? `RESET ${panelLabel}` : 'RESET ZOOM'}</span>
+          </S.ActionButton>
+        )}
+      </S.ChartCanvasShell>
+    )
+  }
+
   return (
     <ScreenLayout>
       <S.ScreenContainer>
-        <TrendToolbar
-          timeRange={timeRange}
-          timeRanges={TIME_RANGES}
-          onSelectRange={setTimeRange}
-          selectedCount={selectedCount}
-          isVariablesOpen={isConfigOpen}
-          onToggleVariables={() => setIsConfigOpen((v) => !v)}
-          isManualOpen={isManualPanelOpen}
-          onToggleManual={() => setIsManualPanelOpen((v) => !v)}
-          isReportOpen={isReportOpen}
-          onToggleReport={() => setIsReportOpen((v) => !v)}
+        {isMobileViewOnly ? (
+          <>
+            <S.MobileActionGrid>
+              {isDualMotorMode ? (
+                <>
+                  <S.MobileActionCard $primary onClick={() => handleOpenMobileTrend(1)}>
+                    <S.MobileActionLabelStack>
+                      <S.MobileActionTitle>Motor #1 Trend</S.MobileActionTitle>
+                      <S.MobileActionMeta>
+                        {motorOneCombinedDatasets.length > 0
+                          ? `${motorOneCombinedDatasets.length} series visible`
+                          : 'No series selected'}
+                      </S.MobileActionMeta>
+                    </S.MobileActionLabelStack>
+                    <ChevronRight size={22} />
+                  </S.MobileActionCard>
+
+                  <S.MobileActionCard $primary onClick={() => handleOpenMobileTrend(2)}>
+                    <S.MobileActionLabelStack>
+                      <S.MobileActionTitle>Motor #2 Trend</S.MobileActionTitle>
+                      <S.MobileActionMeta>
+                        {motorTwoCombinedDatasets.length > 0
+                          ? `${motorTwoCombinedDatasets.length} series visible`
+                          : 'No series selected'}
+                      </S.MobileActionMeta>
+                    </S.MobileActionLabelStack>
+                    <ChevronRight size={22} />
+                  </S.MobileActionCard>
+                </>
+              ) : (
+                <S.MobileActionCard $primary onClick={() => handleOpenMobileTrend('single')}>
+                  <S.MobileActionLabelStack>
+                    <S.MobileActionTitle>Open Trend</S.MobileActionTitle>
+                    <S.MobileActionMeta>
+                      {combinedDatasets.length > 0
+                        ? `${combinedDatasets.length} series visible`
+                        : 'No series selected'}
+                    </S.MobileActionMeta>
+                  </S.MobileActionLabelStack>
+                  <ChartLine size={22} />
+                </S.MobileActionCard>
+              )}
+
+              <S.MobileActionCard onClick={() => handleOpenMobilePanel('variables')}>
+                <S.MobileActionLabelStack>
+                  <S.MobileActionTitle>Variables</S.MobileActionTitle>
+                  <S.MobileActionMeta>
+                    {selectedCount > 0
+                      ? `${selectedCount} series configured`
+                      : 'No visible series configured'}
+                  </S.MobileActionMeta>
+                </S.MobileActionLabelStack>
+                <Filter size={22} />
+              </S.MobileActionCard>
+
+              <S.MobileActionCard onClick={() => handleOpenMobilePanel('currentValues')}>
+                <S.MobileActionLabelStack>
+                  <S.MobileActionTitle>Current Values</S.MobileActionTitle>
+                  <S.MobileActionMeta>Open the live series snapshot in a full-screen popup.</S.MobileActionMeta>
+                </S.MobileActionLabelStack>
+                <Activity size={22} />
+              </S.MobileActionCard>
+
+              <S.MobileActionCard onClick={() => handleOpenMobilePanel('scale')}>
+                <S.MobileActionLabelStack>
+                  <S.MobileActionTitle>Y Scale</S.MobileActionTitle>
+                  <S.MobileActionMeta>
+                    {resolvedYAxisScale
+                      ? `${resolvedYAxisScale.min.toFixed(1)} to ${resolvedYAxisScale.max.toFixed(1)}`
+                      : 'Automatic chart scale'}
+                  </S.MobileActionMeta>
+                </S.MobileActionLabelStack>
+                <SlidersHorizontal size={22} />
+              </S.MobileActionCard>
+
+              <S.MobileActionCard onClick={() => handleOpenMobilePanel('report')}>
+                <S.MobileActionLabelStack>
+                  <S.MobileActionTitle>Send Report</S.MobileActionTitle>
+                  <S.MobileActionMeta>
+                    {emailList.length > 0
+                      ? `${emailList.length} recipients configured`
+                      : 'No recipients configured'}
+                  </S.MobileActionMeta>
+                </S.MobileActionLabelStack>
+                <Mail size={22} />
+              </S.MobileActionCard>
+            </S.MobileActionGrid>
+
+            {activeMobileTrend ? (
+              <S.ModalOverlay onClick={handleCloseMobileTrend}>
+                <S.ModalContent onClick={(event) => event.stopPropagation()}>
+                  <S.ModalHeader>
+                    <h3>
+                      <ChartLine size={18} />
+                      {activeMobileTrend.title}
+                    </h3>
+
+                    <S.ActionButton
+                      onClick={handleCloseMobileTrend}
+                      style={{ minWidth: 44, justifyContent: 'center' }}
+                    >
+                      <X size={16} />
+                    </S.ActionButton>
+                  </S.ModalHeader>
+
+                  <S.MobileTrendModalBody>
+                    <S.MobileTrendToolbar>
+                      <S.RangeTriggerButton
+                        type="button"
+                        $isActive={rangeMode === 'absolute'}
+                        onClick={handleOpenRangeDialog}
+                      >
+                        <CalendarRange size={18} />
+                        <span>Select X Range</span>
+                      </S.RangeTriggerButton>
+                      <S.RangeMetaText>{rangeSummaryText}</S.RangeMetaText>
+                    </S.MobileTrendToolbar>
+
+                    <S.MobileTrendChartFrame>
+                      {renderTrendChartCanvas(
+                        `MobileTrendChart-${activeMobileTrend.title}`,
+                        activeMobileTrend.datasets,
+                        true,
+                        'ZOOM'
+                      )}
+                    </S.MobileTrendChartFrame>
+                  </S.MobileTrendModalBody>
+                </S.ModalContent>
+              </S.ModalOverlay>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <TrendToolbar
+              timeRange={timeRange}
+              rangeMode={rangeMode}
+              timeRanges={TIME_RANGES}
+              onSelectRange={handleSelectTimeRange}
+              customRange={customRangeDraft}
+              customRangeError={customRangeError}
+              activeRangeSummary={activeRangeSummary}
+              canApplyCustomRange={canApplyCustomRange}
+              maxRangeDateTime={maxRangeDateTime}
+              onChangeRangeStart={handleChangeRangeStart}
+              onChangeRangeEnd={handleChangeRangeEnd}
+              onApplyCustomRange={handleApplyCustomRange}
+              onClearCustomRange={handleClearCustomRange}
+              selectedCount={selectedCount}
+              isVariablesOpen={isConfigOpen}
+              onToggleVariables={() => toggleExclusivePanel('variables')}
+              isManualOpen={isManualPanelOpen}
+              onToggleManual={() => toggleExclusivePanel('manual')}
+              manualDisabled={isViewOnly}
+              isScaleOpen={isScalePanelOpen}
+              onToggleScale={() => toggleExclusivePanel('scale')}
+              isCurrentValuesOpen={isCurrentValuesOpen}
+              onToggleCurrentValues={() => toggleExclusivePanel('currentValues')}
+              isReportOpen={isReportOpen}
+              onToggleReport={() => toggleExclusivePanel('report')}
+            />
+
+            <S.ContentArea>
+              <S.ChartSection
+                $isShrunk={
+                  isReportOpen ||
+                  isManualPanelOpen ||
+                  isConfigOpen ||
+                  isScalePanelOpen ||
+                  isCurrentValuesOpen
+                }
+              >
+                <TrendRangeNavigator
+                  datasets={combinedDatasets}
+                  fullDomain={combinedXDomain}
+                  value={zoomXDomain}
+                  onChange={setZoomXDomain}
+                />
+
+                {isDualMotorMode ? (
+                  <S.DualChartsGrid>
+                    <S.DualChartPanel>
+                      <S.DualChartHeader>
+                        <S.DualChartTitle>Motor #2</S.DualChartTitle>
+                        <S.DualChartMeta>
+                          {selectedCount > 0
+                            ? `${selectedCount} series selected`
+                            : 'No series selected'}
+                        </S.DualChartMeta>
+                      </S.DualChartHeader>
+                      <S.DualChartBody>
+                        {renderTrendChartCanvas('TrendChartMotor2', motorTwoCombinedDatasets)}
+                      </S.DualChartBody>
+                    </S.DualChartPanel>
+
+                    <S.DualChartPanel>
+                      <S.DualChartHeader>
+                        <S.DualChartTitle>Motor #1</S.DualChartTitle>
+                        <S.DualChartMeta>
+                          {selectedCount > 0
+                            ? `${selectedCount} series selected`
+                            : 'No series selected'}
+                        </S.DualChartMeta>
+                      </S.DualChartHeader>
+                      <S.DualChartBody>
+                        {renderTrendChartCanvas(
+                          'TrendChartMotor1',
+                          motorOneCombinedDatasets,
+                          true,
+                          'ZOOM'
+                        )}
+                      </S.DualChartBody>
+                    </S.DualChartPanel>
+                  </S.DualChartsGrid>
+                ) : (
+                  renderTrendChartCanvas('TrendChart', combinedDatasets, true)
+                )}
+
+                {/* Hidden exporter (inside the real ThemeProvider) */}
+                {exportRequest && (
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: '-10000px',
+                      top: '-10000px',
+                      width: exportRequest.width,
+                      height: exportRequest.height,
+                      pointerEvents: 'none',
+                      opacity: 0
+                    }}
+                  >
+                    <TrendChart
+                      ref={exportChartRef}
+                      datasets={exportRequest.datasets}
+                      responsive={false}
+                      maintainAspectRatio={false}
+                      showLegend={false}
+                      showTitle={false}
+                      showTooltips={false}
+                      width={exportRequest.width}
+                      height={exportRequest.height}
+                      position={{ left: 0, top: 0 }}
+                      scales={{
+                        x: {
+                          min: exportRequest.xMin,
+                          max: exportRequest.xMax,
+                          ticks: {
+                            callback: (val: number) =>
+                              formatEpochSecondsForSpan(
+                                val,
+                                Math.max(exportRequest.xMax - exportRequest.xMin, 60)
+                              ),
+                            space: 100
+                          }
+                        },
+                        y: {
+                          min: exportRequest.yMin,
+                          max: exportRequest.yMax
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+              </S.ChartSection>
+            </S.ContentArea>
+          </>
+        )}
+
+        {isRangeDialogOpen ? (
+          <S.ModalOverlay onClick={handleCloseRangeDialog}>
+            <S.RangeDialog onClick={(event) => event.stopPropagation()}>
+              <S.RangeDialogHeader>
+                <div>
+                  <S.RangeDialogTitle>Select Range</S.RangeDialogTitle>
+                  <S.RangeDialogSubtitle>
+                    Touch-friendly custom range up to 2 months.
+                  </S.RangeDialogSubtitle>
+                </div>
+
+                <S.RangeDialogClose onClick={handleCloseRangeDialog} aria-label="Close range popup">
+                  <X size={16} />
+                </S.RangeDialogClose>
+              </S.RangeDialogHeader>
+
+              <S.RangeDialogBody>
+                <S.RangeMetaRow>
+                  <S.RangeBadge $active={rangeMode === 'absolute'}>
+                    {rangeMode === 'absolute' ? 'Custom range active' : 'Using preset window'}
+                  </S.RangeBadge>
+                  <S.RangeMetaText>Maximum: 2 months</S.RangeMetaText>
+                </S.RangeMetaRow>
+
+                <S.ButtonGroup>
+                  {TIME_RANGES.map((range) => (
+                    <S.TimeButton
+                      key={range.value}
+                      $isActive={rangeMode === 'relative' && timeRange === range.value}
+                      onClick={() => handleSelectPresetRangeAndClose(range.value)}
+                    >
+                      {range.label}
+                    </S.TimeButton>
+                  ))}
+                </S.ButtonGroup>
+
+                <S.RangeInputStack>
+                  <S.RangeInputGroup>
+                    <S.RangeLabel>From</S.RangeLabel>
+                    <S.RangeInput
+                      type="datetime-local"
+                      step={60}
+                      value={customRangeDraft.start}
+                      max={maxRangeDateTime}
+                      onChange={(event) => handleChangeRangeStart(event.target.value)}
+                    />
+                  </S.RangeInputGroup>
+
+                  <S.RangeInputGroup>
+                    <S.RangeLabel>To</S.RangeLabel>
+                    <S.RangeInput
+                      type="datetime-local"
+                      step={60}
+                      value={customRangeDraft.end}
+                      min={customRangeDraft.start || undefined}
+                      max={maxRangeDateTime}
+                      onChange={(event) => handleChangeRangeEnd(event.target.value)}
+                    />
+                  </S.RangeInputGroup>
+                </S.RangeInputStack>
+
+                <S.RangeHint $tone={customRangeError ? 'error' : 'default'}>
+                  {customRangeError ??
+                    activeRangeSummary ??
+                    'Pick the historical slice you want to inspect.'}
+                </S.RangeHint>
+              </S.RangeDialogBody>
+
+              <S.RangeDialogFooter>
+                {rangeMode === 'absolute' ? (
+                  <S.RangeActionButton onClick={handleUsePresetAndClose}>
+                    USE PRESET
+                  </S.RangeActionButton>
+                ) : null}
+                <S.RangeActionButton onClick={handleCloseRangeDialog}>CLOSE</S.RangeActionButton>
+                <S.RangeActionButton
+                  $variant="primary"
+                  disabled={!canApplyCustomRange}
+                  onClick={handleApplyCustomRangeAndClose}
+                >
+                  APPLY
+                </S.RangeActionButton>
+              </S.RangeDialogFooter>
+            </S.RangeDialog>
+          </S.ModalOverlay>
+        ) : null}
+
+        <ReportPanel
+          isOpen={isReportOpen}
+          onClose={() => setIsReportOpen(false)}
+          emailList={emailList}
+          newEmail={newEmail}
+          onChangeNewEmail={setNewEmail}
+          onAddEmail={handleAddEmail}
+          onSendReport={handleSendReport}
+          isSending={isSending}
+          onRemoveEmail={handleRemoveEmail}
+          isNewEmailValid={isNewEmailValid}
+          emailError={emailError}
+          subject={reportSubject}
+          onChangeSubject={setReportSubject}
+          note={reportNote}
+          onChangeNote={setReportNote}
+          privateMode={privateMode}
+          onTogglePrivateMode={() => setPrivateMode((v) => !v)}
+          excelSampleIntervalValue={excelSampleIntervalValue}
+          onChangeExcelSampleIntervalValue={setExcelSampleIntervalValue}
+          excelSampleIntervalUnit={excelSampleIntervalUnit}
+          onChangeExcelSampleIntervalUnit={setExcelSampleIntervalUnit}
+          readOnly={isViewOnly}
         />
 
-        <S.ContentArea>
-          <S.ChartSection $isShrunk={isReportOpen || isManualPanelOpen || isConfigOpen}>
-            {perfEnabled ? (
-              <Profiler
-                id="TrendChart"
-                onRender={(
-                  id,
-                  phase,
-                  actualDuration,
-                  baseDuration,
-                  startTime,
-                  commitTime
-                ) => {
-                  debugLog('trend.perf', 'React Profiler', {
-                    id,
-                    phase,
-                    actualMs: Math.round(actualDuration),
-                    baseMs: Math.round(baseDuration),
-                    startTime: Math.round(startTime),
-                    commitTime: Math.round(commitTime)
-                  })
-                }}
-              >
-                <TrendChart
-                  ref={chartRef}
-                  datasets={combinedDatasets}
-                  timeWindow={timeRange}
-                  showLegend={false}
-                  showTitle={false}
-                  responsive={true}
-                  maintainAspectRatio={false}
-                  height={'97%'}
-                  width={'98%'}
-                  scales={{
-                    x: {
-                      min: combinedXDomain?.min,
-                      max: combinedXDomain?.max,
-                      ticks: {
-                        callback: (val: unknown): string => {
-                          const date = new Date((val as number) * 1000)
-                          return date.toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit'
-                          })
-                        }
-                      }
-                    }
-                  }}
-                />
-              </Profiler>
-            ) : (
-              <TrendChart
-                ref={chartRef}
-                datasets={combinedDatasets}
-                timeWindow={timeRange}
-                showLegend={false}
-                showTitle={false}
-                responsive={true}
-                maintainAspectRatio={false}
-                height={'97%'}
-                width={'98%'}
-                scales={{
-                  x: {
-                    min: combinedXDomain?.min,
-                    max: combinedXDomain?.max,
-                    ticks: {
-                      callback: (val: unknown): string => {
-                        const date = new Date((val as number) * 1000)
-                        return date.toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        })
-                      }
-                    }
-                  }
-                }}
-              />
-            )}
-            <LegendBox values={currentValues} />
+        <ManualPanel
+          isOpen={isManualPanelOpen}
+          onClose={() => setIsManualPanelOpen(false)}
+          manualSeries={manualSeries}
+          selectedManualIds={selectedManualIds}
+          onToggleManualSeries={handleToggleManualSeries}
+          manualMode={manualMode}
+          onChangeManualMode={setManualMode}
+          manualForm={manualForm}
+          onChangeManualForm={setManualForm}
+          onSubmit={handleManualSubmit}
+          onResetForm={() =>
+            setManualForm((prev) => ({
+              ...prev,
+              seriesId: undefined,
+              name: '',
+              unit: '',
+              value: '',
+              time: nowLocalInput(),
+              note: '',
+              createdBy: '',
+              pointId: undefined
+            }))
+          }
+          isSubmitting={isManualSubmitting}
+          manualPoints={manualPoints}
+          manualPointsSeriesId={manualPointsSeriesId}
+          onChangeManualPointsSeriesId={setManualPointsSeriesId}
+          onReloadPoints={loadManualPoints}
+          onEditPoint={handleEditPoint}
+          onDeletePoint={handleDeletePoint}
+          onEditSeries={handleEditSeries}
+          onDeleteSeries={handleDeleteSeries}
+        />
 
-            {/* Hidden exporter (inside the real ThemeProvider) */}
-            {exportRequest && (
-              <div
-                style={{
-                  position: 'fixed',
-                  left: '-10000px',
-                  top: '-10000px',
-                  width: exportRequest.width,
-                  height: exportRequest.height,
-                  pointerEvents: 'none',
-                  opacity: 0
-                }}
-              >
-                <TrendChart
-                  ref={exportChartRef}
-                  datasets={exportRequest.datasets}
-                  responsive={false}
-                  maintainAspectRatio={false}
-                  showLegend={false}
-                  showTitle={false}
-                  showTooltips={false}
-                  width={exportRequest.width}
-                  height={exportRequest.height}
-                  position={{ left: 0, top: 0 }}
-                  scales={{
-                    x: {
-                      min: exportRequest.xMin,
-                      max: exportRequest.xMax,
-                      ticks: {
-                        callback: (val: number) => formatEpochSecondsToLocalTime(val),
-                        space: 100
-                      }
-                    },
-                    y: {
-                      min: exportRequest.yMin,
-                      max: exportRequest.yMax
-                    }
-                  }}
-                />
-              </div>
-            )}
-          </S.ChartSection>
+        <ScalePanel
+          isOpen={isScalePanelOpen}
+          onClose={() => setIsScalePanelOpen(false)}
+          yAxisScale={yAxisScale}
+          onChangeYAxisScale={setYAxisScale}
+          resolvedYAxisScale={resolvedYAxisScale}
+          error={yAxisScaleError}
+          readOnly={isViewOnly}
+        />
 
-          <ReportPanel
-            isOpen={isReportOpen}
-            onClose={() => setIsReportOpen(false)}
-            emailList={emailList}
-            newEmail={newEmail}
-            onChangeNewEmail={setNewEmail}
-            onAddEmail={handleAddEmail}
-            onSendReport={handleSendReport}
-            isSending={isSending}
-            onRemoveEmail={handleRemoveEmail}
-            isNewEmailValid={isNewEmailValid}
-            emailError={emailError}
-            subject={reportSubject}
-            onChangeSubject={setReportSubject}
-            note={reportNote}
-            onChangeNote={setReportNote}
-            privateMode={privateMode}
-            onTogglePrivateMode={() => setPrivateMode((v) => !v)}
-          />
+        <CurrentValuesPanel
+          isOpen={isCurrentValuesOpen}
+          onClose={() => setIsCurrentValuesOpen(false)}
+          values={currentValues}
+          valuesByMotor={currentValuesByMotor}
+          isDualMotorMode={isDualMotorMode}
+        />
 
-          <ManualPanel
-            isOpen={isManualPanelOpen}
-            onClose={() => setIsManualPanelOpen(false)}
-            manualSeries={manualSeries}
-            selectedManualIds={selectedManualIds}
-            onToggleManualSeries={handleToggleManualSeries}
-            manualMode={manualMode}
-            onChangeManualMode={setManualMode}
-            manualForm={manualForm}
-            onChangeManualForm={setManualForm}
-            onSubmit={handleManualSubmit}
-            onResetForm={() =>
-              setManualForm((prev) => ({
-                ...prev,
-                seriesId: undefined,
-                name: '',
-                unit: '',
-                value: '',
-                time: nowLocalInput(),
-                note: '',
-                createdBy: '',
-                pointId: undefined
-              }))
-            }
-            isSubmitting={isManualSubmitting}
-            manualPoints={manualPoints}
-            manualPointsSeriesId={manualPointsSeriesId}
-            onChangeManualPointsSeriesId={setManualPointsSeriesId}
-            onReloadPoints={loadManualPoints}
-            onEditPoint={handleEditPoint}
-            onDeletePoint={handleDeletePoint}
-            onEditSeries={handleEditSeries}
-            onDeleteSeries={handleDeleteSeries}
-          />
-
-          <VariablesPanel
-            isOpen={isConfigOpen}
-            onClose={() => setIsConfigOpen(false)}
-            selectedVarIds={selectedVarIds}
-            onToggleVar={handleToggleVar}
-            selectedManualIds={selectedManualIds}
-            onToggleManualSeries={handleToggleManualSeries}
-            manualSeries={manualSeries}
-            onOpenManualPanel={() => setIsManualPanelOpen(true)}
-          />
-        </S.ContentArea>
+        <VariablesPanel
+          isOpen={isConfigOpen}
+          onClose={() => setIsConfigOpen(false)}
+          selectedVarIds={selectedVarIds}
+          onToggleVar={handleToggleVar}
+          trendColorPalette={trendColorPalette}
+          getEffectiveSensorColor={getEffectiveSensorColor}
+          onSetSeriesColor={setSeriesColorOverride}
+          onClearSeriesColor={clearSeriesColorOverride}
+          selectedManualIds={selectedManualIds}
+          onToggleManualSeries={handleToggleManualSeries}
+          getEffectiveManualColor={getEffectiveManualColor}
+          manualSeries={manualSeries}
+          onOpenManualPanel={() => openExclusivePanel('manual')}
+          sensorSelectionDisabled={false}
+          manualSelectionDisabled={isViewOnly}
+          colorEditingDisabled={isViewOnly}
+          manualManageDisabled={isViewOnly}
+        />
       </S.ScreenContainer>
     </ScreenLayout>
   )

@@ -1,6 +1,16 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios'
 import { isAxiosErrorLike } from 'types/errors'
 
+const logToMain = (level: 'INFO' | 'WARN' | 'ERROR', message: string, meta?: unknown): void => {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.api?.log?.(level, message, meta)
+  } catch {
+    // ignore logging failures
+  }
+}
+
 export interface IApiService {
   get<T, P = Record<string, unknown>>(
     url: string,
@@ -34,6 +44,11 @@ export class ApiService implements IApiService {
       }
     })
 
+    logToMain('INFO', 'api.client.init', {
+      baseURL: this.axiosInstance.defaults.baseURL,
+      timeout: this.axiosInstance.defaults.timeout
+    })
+
     this.setupInterceptors()
   }
 
@@ -57,8 +72,19 @@ export class ApiService implements IApiService {
             url,
             detail
           })
+          logToMain('ERROR', 'api.error', {
+            message: error.message,
+            code: error.code,
+            status,
+            method,
+            url,
+            detail
+          })
         } else {
           console.error('API Error:', error)
+          logToMain('ERROR', 'api.error', {
+            message: String(error)
+          })
         }
         return Promise.reject(error)
       }

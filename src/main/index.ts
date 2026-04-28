@@ -1,17 +1,28 @@
-import { app, shell, BrowserWindow, ipcMain, desktopCapturer } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, desktopCapturer, screen } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { writeFile, mkdir, appendFile } from 'fs/promises'
 import { spawn, type ChildProcess } from 'child_process'
+import * as net from 'node:net'
 import path from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
 let mainWindowRef: BrowserWindow | null = null
 let isAppQuitting = false
+let managedBackendProcess: ChildProcess | null = null
 
 const LOG_DIR_NAME = 'logs'
 const LOG_FILE_NAME = 'electron-main.log'
+const BACKEND_HOST = '127.0.0.1'
+const BACKEND_PORT = 8000
+
+type BackendLaunchSpec = {
+  command: string
+  args: string[]
+  cwd: string
+  description: string
+}
 
 const safeStringify = (value: unknown): string => {
   try {
@@ -56,6 +67,214 @@ const getMainWindow = (): BrowserWindow | null => {
   const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()) ?? null
   mainWindowRef = win
   return win
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const isTcpPortOpen = async (
+  host: string,
+  port: number,
+  timeoutMs = 800
+): Promise<boolean> => {
+  return await new Promise((resolve) => {
+    const socket = net.createConnection({ host, port })
+    let settled = false
+
+    const finish = (value: boolean) => {
+      if (settled) return
+      settled = true
+      socket.destroy()
+      resolve(value)
+    }
+
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', () => finish(true))
+    socket.once('timeout', () => finish(false))
+    socket.once('error', () => finish(false))
+  })
+}
+
+const waitForTcpPort = async (
+  host: string,
+  port: number,
+  timeoutMs: number
+): Promise<boolean> => {
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isTcpPortOpen(host, port)) {
+      return true
+    }
+
+    await wait(400)
+  }
+
+  return false
+}
+
+const collectExistingPaths = (paths: Array<string | null | undefined>): string[] => {
+  return Array.from(
+    new Set(
+      paths
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .map((value) => path.resolve(value))
+        .filter((value) => existsSync(value))
+    )
+  )
+}
+
+const resolveBackendRoots = (): string[] => {
+  const envRoot = (process.env['GLOBALTECH_BACKEND_ROOT'] || '').trim()
+  const appPath = app.getAppPath()
+  const exeDir = path.dirname(app.getPath('exe'))
+  const cwd = process.cwd()
+
+  return collectExistingPaths([
+    envRoot || null,
+    path.join(cwd, '..', 'Legacy-GlobalTech-Backend'),
+    path.join(cwd, 'Legacy-GlobalTech-Backend'),
+    path.join(appPath, '..', 'Legacy-GlobalTech-Backend'),
+    path.join(appPath, '..', '..', 'Legacy-GlobalTech-Backend'),
+    path.join(exeDir, 'Legacy-GlobalTech-Backend'),
+    path.join(exeDir, '..', 'Legacy-GlobalTech-Backend')
+  ])
+}
+
+const resolveBackendLaunchSpec = (): BackendLaunchSpec | null => {
+  const envExe = (process.env['GLOBALTECH_BACKEND_EXE'] || '').trim()
+  if (envExe && existsSync(envExe)) {
+    return {
+      command: envExe,
+      args: [],
+      cwd: path.dirname(envExe),
+      description: 'GLOBALTECH_BACKEND_EXE'
+    }
+  }
+
+  for (const root of resolveBackendRoots()) {
+    const exePath = path.join(root, 'dist', 'GlobalTechBackend.exe')
+    if (existsSync(exePath)) {
+      return {
+        command: exePath,
+        args: [],
+        cwd: root,
+        description: 'packaged backend executable'
+      }
+    }
+
+    const pythonExe = path.join(root, '.venv', 'Scripts', 'python.exe')
+    const runPy = path.join(root, 'run.py')
+    if (existsSync(pythonExe) && existsSync(runPy)) {
+      return {
+        command: pythonExe,
+        args: [runPy],
+        cwd: root,
+        description: 'backend Python entrypoint'
+      }
+    }
+  }
+
+  return null
+}
+
+const wireBackendStreamLogging = (
+  stream: NodeJS.ReadableStream | null,
+  level: 'INFO' | 'WARN' | 'ERROR',
+  source: string
+): void => {
+  if (!stream) return
+
+  stream.on('data', (chunk) => {
+    const text = String(chunk).trim()
+    if (!text) return
+    void logMain(level, source, text)
+  })
+}
+
+const ensureManagedBackend = async (): Promise<void> => {
+  if (await isTcpPortOpen(BACKEND_HOST, BACKEND_PORT)) {
+    await logMain('INFO', 'Detected existing backend listener', {
+      host: BACKEND_HOST,
+      port: BACKEND_PORT
+    })
+    return
+  }
+
+  const spec = resolveBackendLaunchSpec()
+  if (!spec) {
+    await logMain('WARN', 'No backend launcher candidate found')
+    return
+  }
+
+  await logMain('INFO', 'Starting managed backend', {
+    description: spec.description,
+    command: spec.command,
+    args: spec.args,
+    cwd: spec.cwd
+  })
+
+  const child = spawn(spec.command, spec.args, {
+    cwd: spec.cwd,
+    env: {
+      ...process.env,
+      HOST: BACKEND_HOST,
+      PORT: String(BACKEND_PORT),
+      RELOAD: '0',
+      LOG_TO_CONSOLE: '1'
+    },
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+
+  managedBackendProcess = child
+
+  wireBackendStreamLogging(child.stdout, 'INFO', 'backend.stdout')
+  wireBackendStreamLogging(child.stderr, 'ERROR', 'backend.stderr')
+
+  child.once('error', (error) => {
+    void logMain('ERROR', 'Managed backend failed to start', error)
+  })
+
+  child.once('exit', (code, signal) => {
+    void logMain('WARN', 'Managed backend exited', { code, signal })
+    if (managedBackendProcess === child) {
+      managedBackendProcess = null
+    }
+  })
+
+  const ready = await waitForTcpPort(BACKEND_HOST, BACKEND_PORT, 15_000)
+  if (!ready) {
+    await logMain('ERROR', 'Managed backend did not become ready in time', {
+      host: BACKEND_HOST,
+      port: BACKEND_PORT
+    })
+    return
+  }
+
+  await logMain('INFO', 'Managed backend is ready', { host: BACKEND_HOST, port: BACKEND_PORT })
+}
+
+const stopManagedBackend = (): void => {
+  const child = managedBackendProcess
+  managedBackendProcess = null
+
+  if (!child?.pid) return
+
+  void logMain('INFO', 'Stopping managed backend', { pid: child.pid })
+
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore'
+      })
+      return
+    }
+
+    child.kill('SIGTERM')
+  } catch (error) {
+    void logMain('ERROR', 'Failed to stop managed backend', error)
+  }
 }
 
 /**
@@ -158,13 +377,21 @@ function createWindow(): void {
   // En producción: comportamiento según modo kiosko
   const isDevelopment = is.dev
   const shouldUseKiosk = !isDevelopment && isKioskEnabled()
+  const targetDisplay = screen.getPrimaryDisplay()
+  const displayBounds = shouldUseKiosk ? targetDisplay.bounds : targetDisplay.workArea
+  const targetWidth = shouldUseKiosk ? displayBounds.width : Math.min(1920, displayBounds.width)
+  const targetHeight = shouldUseKiosk ? displayBounds.height : Math.min(1080, displayBounds.height)
 
   // Create the browser window.
   const win = new BrowserWindow({
-    width: 1920,
-    height: 1080,
+    x: displayBounds.x,
+    y: displayBounds.y,
+    width: targetWidth,
+    height: targetHeight,
     show: false,
     autoHideMenuBar: true,
+    center: !shouldUseKiosk,
+    useContentSize: true,
     // En desarrollo: ventana con frame para poder moverla
     // En producción: sin frame si está en modo kiosko
     frame: isDevelopment || !shouldUseKiosk,
@@ -238,10 +465,14 @@ function createWindow(): void {
   win.on('ready-to-show', () => {
     // Solo aplicar comportamiento de kiosko si no estamos en desarrollo y está habilitado
     if (!isDevelopment && shouldUseKiosk) {
+      win.setBounds(displayBounds)
       applyKioskWindowBehavior(win)
     } else {
       // En desarrollo: solo ocultar menú pero mantener ventana normal
       win.setMenuBarVisibility(false)
+      if (displayBounds.width < 1920 || displayBounds.height < 1080) {
+        win.maximize()
+      }
     }
     win.show()
   })
@@ -269,6 +500,7 @@ app.whenReady().then(() => {
 
   app.on('before-quit', () => {
     isAppQuitting = true
+    stopManagedBackend()
   })
 
   // Default open or close DevTools by F12 in development
@@ -353,7 +585,9 @@ app.whenReady().then(() => {
     }
   })
 
-  createWindow()
+  void ensureManagedBackend().finally(() => {
+    createWindow()
+  })
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

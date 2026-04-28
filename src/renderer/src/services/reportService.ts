@@ -16,6 +16,7 @@ export type ClientMotorExtraField = {
 
 export type ClientMotorInfo = {
   customer: string
+  driveModel?: string
   model: string
   catalog: string
   hp: string
@@ -30,7 +31,14 @@ export type ClientMotorInfo = {
   serviceFactor: string
   efficiency: string
   inverterRating: string
+  connection?: string
+  maxOperating?: string
   extras: ClientMotorExtraField[]
+}
+
+export type DualClientMotorInfo = {
+  drive1: ClientMotorInfo
+  drive2: ClientMotorInfo
 }
 
 export type TrendReportSensorSeries = {
@@ -49,10 +57,34 @@ export type TrendReportManualSeries = {
 
 export type TrendReportSeries = TrendReportSensorSeries | TrendReportManualSeries
 
+export type TrendReportWorkbookPoint = {
+  x: number
+  y: number
+}
+
+export type TrendReportWorkbookSensorSeries = TrendReportSensorSeries & {
+  points: TrendReportWorkbookPoint[]
+}
+
+export type TrendReportWorkbookManualSeries = TrendReportManualSeries & {
+  points: TrendReportWorkbookPoint[]
+}
+
+export type TrendReportWorkbookSeries =
+  | TrendReportWorkbookSensorSeries
+  | TrendReportWorkbookManualSeries
+
+export type TrendReportWorkbookSheet = {
+  name: string
+  series: TrendReportWorkbookSeries[]
+}
+
 export type SendTrendReportEmailRequest = {
   recipients: string[]
   /** If true, sends recipients as BCC to hide addresses */
   privateMode?: boolean
+  /** Excel export sampling interval in seconds. Does not affect live trend rendering. */
+  excelSampleSeconds?: number
   subject?: string
   note?: string
   timeRange: {
@@ -60,8 +92,10 @@ export type SendTrendReportEmailRequest = {
     end: string
   }
   series: TrendReportSeries[]
+  workbookSheets?: TrendReportWorkbookSheet[]
   images: TrendReportImageAttachment[]
   clientMotorInfo?: ClientMotorInfo
+  dualClientMotorInfo?: DualClientMotorInfo
 }
 
 export type SendTrendReportEmailResponse = {

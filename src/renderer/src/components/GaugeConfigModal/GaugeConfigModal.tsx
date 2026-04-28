@@ -26,6 +26,8 @@ type GaugeConfigModalProps = {
   subtitle?: string
   variables: GaugeVariableOption[]
   initialValue: GaugeConfigValue
+  showRangeFields?: boolean
+  hintText?: string
   onClose: () => void
   onSave: (next: GaugeConfigValue) => void
 }
@@ -41,6 +43,8 @@ export const GaugeConfigModal = ({
   subtitle,
   variables,
   initialValue,
+  showRangeFields = true,
+  hintText = 'Tip: the HMI will subscribe the selected variable on-demand to keep it live.',
   onClose,
   onSave
 }: GaugeConfigModalProps) => {
@@ -57,13 +61,22 @@ export const GaugeConfigModal = ({
     label: '',
     initialValue: ''
   })
+  const {
+    parameterId: initialParameterId,
+    minValue: initialMinValue,
+    maxValue: initialMaxValue
+  } = initialValue
 
   useEffect(() => {
     if (!isOpen) return
-    setDraft(initialValue)
+    setDraft({
+      parameterId: initialParameterId,
+      minValue: initialMinValue,
+      maxValue: initialMaxValue
+    })
     setError(null)
     setKeyboard({ visible: false, target: null, label: '', initialValue: '' })
-  }, [isOpen, initialValue])
+  }, [isOpen, initialParameterId, initialMinValue, initialMaxValue])
 
   const variableGroups = useMemo(() => {
     const map = new Map<string, GaugeVariableOption[]>()
@@ -107,13 +120,15 @@ export const GaugeConfigModal = ({
       setError('Please select a variable.')
       return
     }
-    if (!Number.isFinite(draft.minValue) || !Number.isFinite(draft.maxValue)) {
-      setError('Min and Max must be valid numbers.')
-      return
-    }
-    if (draft.minValue >= draft.maxValue) {
-      setError('Min must be lower than Max.')
-      return
+    if (showRangeFields) {
+      if (!Number.isFinite(draft.minValue) || !Number.isFinite(draft.maxValue)) {
+        setError('Min and Max must be valid numbers.')
+        return
+      }
+      if (draft.minValue >= draft.maxValue) {
+        setError('Min must be lower than Max.')
+        return
+      }
     }
     onSave(draft)
   }
@@ -158,28 +173,28 @@ export const GaugeConfigModal = ({
               </S.Select>
             </S.Field>
 
-            <S.FormGrid>
-              <S.Field>
-                <S.Label>Min</S.Label>
-                <S.FakeInput
-                  onClick={() => openKeyboard('min', 'Min', formatNumber(draft.minValue))}
-                >
-                  {formatNumber(draft.minValue)}
-                </S.FakeInput>
-              </S.Field>
-              <S.Field>
-                <S.Label>Max</S.Label>
-                <S.FakeInput
-                  onClick={() => openKeyboard('max', 'Max', formatNumber(draft.maxValue))}
-                >
-                  {formatNumber(draft.maxValue)}
-                </S.FakeInput>
-              </S.Field>
-            </S.FormGrid>
+            {showRangeFields && (
+              <S.FormGrid>
+                <S.Field>
+                  <S.Label>Min</S.Label>
+                  <S.FakeInput
+                    onClick={() => openKeyboard('min', 'Min', formatNumber(draft.minValue))}
+                  >
+                    {formatNumber(draft.minValue)}
+                  </S.FakeInput>
+                </S.Field>
+                <S.Field>
+                  <S.Label>Max</S.Label>
+                  <S.FakeInput
+                    onClick={() => openKeyboard('max', 'Max', formatNumber(draft.maxValue))}
+                  >
+                    {formatNumber(draft.maxValue)}
+                  </S.FakeInput>
+                </S.Field>
+              </S.FormGrid>
+            )}
 
-            <S.Hint>
-              Tip: the HMI will subscribe the selected variable on-demand to keep it live.
-            </S.Hint>
+            <S.Hint>{hintText}</S.Hint>
 
             {error && <S.ErrorBanner>{error}</S.ErrorBanner>}
           </S.Content>

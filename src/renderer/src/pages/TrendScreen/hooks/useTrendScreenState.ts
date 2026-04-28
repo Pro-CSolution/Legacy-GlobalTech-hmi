@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTrendData, useManualTrendData } from 'hooks'
+import { useTrendData, useManualTrendData, useWagoDisplayNameOverrides } from 'hooks'
+import { useAccessMode } from 'hooks/useAccessMode'
+import { useMotorControlModePreference } from 'hooks/useMotorControlModePreference'
+import { usePreferredSingleMotorScope } from 'hooks/usePreferredSingleMotorScope'
+import { useTemperatureUnitPreference } from 'hooks/useTemperatureUnitPreference'
 import {
   createManualPoint,
   createManualSeries,
@@ -12,16 +16,60 @@ import {
   updateManualPoint,
   updateManualSeries
 } from 'services/manualTrendService'
+import {
+  saveSharedTrendConfig,
+  SharedTrendConfig
+} from 'services/sharedTrendConfigService'
 import { Dataset } from 'components/TrendChart/TrendChart.types'
-import { DeviceId, ParameterId } from 'types/generated/devices'
+import { ParameterId } from 'types/generated/devices'
 import {
   AVAILABLE_VARIABLES,
+  DEFAULT_EXCEL_SAMPLE_INTERVAL_UNIT,
+  DEFAULT_EXCEL_SAMPLE_INTERVAL_VALUE,
+  EXCEL_SAMPLE_INTERVAL_UNITS,
+  EXCEL_SAMPLE_INTERVAL_VALUE_OPTIONS,
+  TREND_AVAILABLE_VARIABLES,
+  TREND_AVAILABLE_VARIABLES_BY_ID,
+  applyVariableDisplayValue,
+  buildRelativeRangeInput,
+  formatTrendRangeSummary,
+  getTrendVariableLabel,
+  getVariableDisplayUnit,
+  getWagoIoTrendVariableDisplayUnit,
+  getWagoIoTrendVariableMeta,
+  isWagoIoTrendVariableId,
   MANUAL_COLORS,
   nowLocalInput,
+  nowLocalMinuteInput,
   TIME_RANGES,
-  formatLocalInputFromDate
+  type TrendVariableId,
+  type WagoIoTrendVariableId,
+  type ExcelSampleIntervalUnit,
+  formatLocalInputFromDate,
+  TREND_COLOR_PALETTE,
+  validateTrendCustomRange
 } from '../constants'
-import { CurrentValueItem, ManualFormState, ManualMode } from '../types'
+import { useWagoIoTrendData } from './useWagoIoTrendData'
+import {
+  getMotorDriveDeviceId,
+  getMotorScopeLabel,
+  getMotorWagoDeviceId,
+  getMotorWagoLiveDeviceId,
+  type MotorScope
+} from 'utils/motorDeviceMapping'
+import {
+  MAIN_SCREEN_TEMPERATURE_PARAMETER_IDS,
+  redirectLegacyMainTemperatureParameter
+} from 'utils/mainTemperatureMapping'
+import {
+  CurrentValueItem,
+  ManualFormState,
+  ManualMode,
+  TrendCustomRange,
+  TrendRangeMode,
+  TrendYAxisScaleState
+} from '../types'
+import { useMainTemperatureTrendData } from './useMainTemperatureTrendData'
 
 type ExtendedDataset = Dataset & {
   parameterId?: string
@@ -29,28 +77,83 @@ type ExtendedDataset = Dataset & {
   isManual?: boolean
 }
 
-type TrendScreenPersistedState = {
-  selectedVarIds: ParameterId[]
-  selectedManualIds: number[]
-  timeRange: number
+type SensorDataset = Dataset & {
+  parameterId: ParameterId
 }
 
-const DEFAULT_SELECTED_VAR_IDS: ParameterId[] = [
+type WagoIoDataset = Dataset & {
+  parameterId: WagoIoTrendVariableId
+}
+
+type TrendSensorDataset = SensorDataset | WagoIoDataset
+
+type TrendScreenPersistedState = {
+  selectedVarIds: TrendVariableId[]
+  selectedManualIds: number[]
+  timeRange: number
+  rangeMode: TrendRangeMode
+  customRange: TrendCustomRange | null
+  yAxisScale: TrendYAxisScaleState
+  seriesColorOverrides: Record<string, string>
+}
+
+type TrendSeriesColorType = 'sensor' | 'manual'
+type TrendSeriesColorOverrides = Record<string, string>
+
+const DEFAULT_SELECTED_VAR_IDS: TrendVariableId[] = []
+const LEGACY_AUTO_SELECTED_VAR_IDS: TrendVariableId[] = [
   AVAILABLE_VARIABLES[0]?.id,
   AVAILABLE_VARIABLES[1]?.id,
   AVAILABLE_VARIABLES[3]?.id
 ].filter((id): id is ParameterId => Boolean(id))
 
-const DEFAULT_TIME_RANGE = TIME_RANGES[4]?.value ?? 60
+const DEFAULT_TIME_RANGE = TIME_RANGES.find((range) => range.value === 60)?.value ?? 60
 const TREND_STORAGE_KEY = 'trend_screen_config'
 const EMAIL_STORAGE_KEY = 'trend_report_emails'
 const REPORT_META_STORAGE_KEY = 'trend_report_meta'
+const DEFAULT_Y_AXIS_SCALE: TrendYAxisScaleState = {
+  mode: 'auto',
+  min: '',
+  max: ''
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const TREND_COLOR_SET = new Set<string>(TREND_COLOR_PALETTE)
+const MAIN_SCREEN_TEMPERATURE_PARAMETER_ID_SET = new Set<ParameterId>(
+  MAIN_SCREEN_TEMPERATURE_PARAMETER_IDS
+)
+const CORRECTED_WAGO_LIVE_TREND_PARAMETER_ID_SET = new Set<ParameterId>(['Coolant_Pressure_PSI'])
 
 const isBrowser = (): boolean => typeof window !== 'undefined'
 
 const normalizeEmail = (value: string): string => value.trim().toLowerCase()
+
+const getSeriesColorKey = (type: TrendSeriesColorType, id: string | number): string =>
+  `${type}:${String(id)}`
+
+const sanitizeSeriesColorOverrides = (value: unknown): TrendSeriesColorOverrides => {
+  if (!value || typeof value !== 'object') return {}
+
+  const validSensorIds = new Set<string>(TREND_AVAILABLE_VARIABLES.map((variable) => variable.id))
+  const sanitized: TrendSeriesColorOverrides = {}
+
+  Object.entries(value as Record<string, unknown>).forEach(([key, rawColor]) => {
+    if (typeof rawColor !== 'string' || !TREND_COLOR_SET.has(rawColor)) return
+
+    if (key.startsWith('sensor:')) {
+      const sensorId = key.slice('sensor:'.length)
+      if (!validSensorIds.has(sensorId)) return
+      sanitized[key] = rawColor
+      return
+    }
+
+    if (/^manual:\d+$/.test(key)) {
+      sanitized[key] = rawColor
+    }
+  })
+
+  return sanitized
+}
 
 const sanitizeEmailList = (value: unknown): string[] => {
   if (!Array.isArray(value)) return []
@@ -65,10 +168,17 @@ const sanitizeEmailList = (value: unknown): string[] => {
   return Array.from(deduped)
 }
 
-const getValidVariableIds = (value: unknown): ParameterId[] => {
+const getValidVariableIds = (value: unknown): TrendVariableId[] => {
   if (!Array.isArray(value)) return []
-  const allowed = new Set<string>(AVAILABLE_VARIABLES.map((v) => v.id))
-  return value.filter((id): id is ParameterId => typeof id === 'string' && allowed.has(id))
+  const allowed = new Set<string>(TREND_AVAILABLE_VARIABLES.map((v) => v.id))
+  const normalizedIds = value
+    .map((id): TrendVariableId | null => {
+      if (typeof id !== 'string') return null
+      return redirectLegacyMainTemperatureParameter(id as ParameterId) as TrendVariableId
+    })
+    .filter((id): id is TrendVariableId => id !== null && allowed.has(id))
+
+  return Array.from(new Set(normalizedIds))
 }
 
 const getValidManualIds = (value: unknown): number[] => {
@@ -90,6 +200,62 @@ const getValidTimeRange = (value: unknown): number => {
   return DEFAULT_TIME_RANGE
 }
 
+const getValidRangeMode = (value: unknown): TrendRangeMode => {
+  return value === 'absolute' ? 'absolute' : 'relative'
+}
+
+const sanitizeCustomRange = (value: unknown): TrendCustomRange | null => {
+  if (!value || typeof value !== 'object') return null
+
+  const raw = value as Record<string, unknown>
+  const start = typeof raw.start === 'string' ? raw.start : ''
+  const end = typeof raw.end === 'string' ? raw.end : ''
+  if (!start || !end) return null
+
+  const validation = validateTrendCustomRange({ start, end })
+  return validation.ok ? validation.normalized : null
+}
+
+const sanitizeYAxisScale = (value: unknown): TrendYAxisScaleState => {
+  if (!value || typeof value !== 'object') return DEFAULT_Y_AXIS_SCALE
+
+  const raw = value as Record<string, unknown>
+  const mode = raw.mode === 'manual' ? 'manual' : 'auto'
+  const min =
+    typeof raw.min === 'number' ? String(raw.min) : typeof raw.min === 'string' ? raw.min : ''
+  const max =
+    typeof raw.max === 'number' ? String(raw.max) : typeof raw.max === 'string' ? raw.max : ''
+
+  return { mode, min, max }
+}
+
+const parseScaleNumber = (value: string): number | null => {
+  const normalized = value.trim().replace(',', '.')
+  if (!normalized) return null
+
+  const numeric = Number(normalized)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+const hasSameParameterSelection = (
+  left: readonly TrendVariableId[],
+  right: readonly TrendVariableId[]
+): boolean => left.length === right.length && left.every((id, index) => id === right[index])
+
+const isDefaultYAxisScale = (value: TrendYAxisScaleState): boolean =>
+  value.mode === DEFAULT_Y_AXIS_SCALE.mode &&
+  value.min === DEFAULT_Y_AXIS_SCALE.min &&
+  value.max === DEFAULT_Y_AXIS_SCALE.max
+
+const shouldResetLegacyAutoSelection = (config: TrendScreenPersistedState): boolean =>
+  hasSameParameterSelection(config.selectedVarIds, LEGACY_AUTO_SELECTED_VAR_IDS) &&
+  config.selectedManualIds.length === 0 &&
+  config.timeRange === DEFAULT_TIME_RANGE &&
+  config.rangeMode === 'relative' &&
+  config.customRange === null &&
+  isDefaultYAxisScale(config.yAxisScale) &&
+  Object.keys(config.seriesColorOverrides).length === 0
+
 const loadPersistedTrendConfig = (): TrendScreenPersistedState | null => {
   if (!isBrowser()) return null
   try {
@@ -103,12 +269,36 @@ const loadPersistedTrendConfig = (): TrendScreenPersistedState | null => {
       (parsed as Record<string, unknown>).selectedManualIds
     )
     const sanitizedRange = getValidTimeRange((parsed as Record<string, unknown>).timeRange)
-
-    return {
+    const sanitizedCustomRange = sanitizeCustomRange(
+      (parsed as Record<string, unknown>).customRange
+    )
+    const sanitizedRangeMode =
+      sanitizedCustomRange &&
+      getValidRangeMode((parsed as Record<string, unknown>).rangeMode) === 'absolute'
+        ? 'absolute'
+        : 'relative'
+    const sanitizedYAxisScale = sanitizeYAxisScale((parsed as Record<string, unknown>).yAxisScale)
+    const sanitizedSeriesColorOverrides = sanitizeSeriesColorOverrides(
+      (parsed as Record<string, unknown>).seriesColorOverrides
+    )
+    const config: TrendScreenPersistedState = {
       selectedVarIds: sanitizedVarIds.length ? sanitizedVarIds : DEFAULT_SELECTED_VAR_IDS,
       selectedManualIds: sanitizedManualIds,
-      timeRange: sanitizedRange
+      timeRange: sanitizedRange,
+      rangeMode: sanitizedRangeMode,
+      customRange: sanitizedCustomRange,
+      yAxisScale: sanitizedYAxisScale,
+      seriesColorOverrides: sanitizedSeriesColorOverrides
     }
+
+    if (shouldResetLegacyAutoSelection(config)) {
+      return {
+        ...config,
+        selectedVarIds: DEFAULT_SELECTED_VAR_IDS
+      }
+    }
+
+    return config
   } catch {
     return null
   }
@@ -130,7 +320,15 @@ type TrendReportPersistedMeta = {
   subject: string
   note: string
   privateMode: boolean
+  excelSampleIntervalValue: number
+  excelSampleIntervalUnit: ExcelSampleIntervalUnit
 }
+
+const isValidExcelSampleIntervalValue = (value: number): boolean =>
+  EXCEL_SAMPLE_INTERVAL_VALUE_OPTIONS.some((option) => option === value)
+
+const isValidExcelSampleIntervalUnit = (value: string): value is ExcelSampleIntervalUnit =>
+  EXCEL_SAMPLE_INTERVAL_UNITS.some((option) => option === value)
 
 const sanitizeReportMeta = (value: unknown): TrendReportPersistedMeta | null => {
   if (!value || typeof value !== 'object') return null
@@ -138,7 +336,53 @@ const sanitizeReportMeta = (value: unknown): TrendReportPersistedMeta | null => 
   const subject = typeof v.subject === 'string' ? v.subject : ''
   const note = typeof v.note === 'string' ? v.note : ''
   const privateMode = typeof v.privateMode === 'boolean' ? v.privateMode : false
-  return { subject, note, privateMode }
+  const rawValue =
+    typeof v.excelSampleIntervalValue === 'number' ? v.excelSampleIntervalValue : NaN
+  const rawUnit =
+    typeof v.excelSampleIntervalUnit === 'string' ? v.excelSampleIntervalUnit : ''
+
+  if (isValidExcelSampleIntervalValue(rawValue) && isValidExcelSampleIntervalUnit(rawUnit)) {
+    return {
+      subject,
+      note,
+      privateMode,
+      excelSampleIntervalValue: rawValue,
+      excelSampleIntervalUnit: rawUnit
+    }
+  }
+
+  const legacyExcelSampleSeconds =
+    typeof v.excelSampleSeconds === 'number' ? v.excelSampleSeconds : NaN
+  if (Number.isFinite(legacyExcelSampleSeconds)) {
+    if (isValidExcelSampleIntervalValue(legacyExcelSampleSeconds)) {
+      return {
+        subject,
+        note,
+        privateMode,
+        excelSampleIntervalValue: legacyExcelSampleSeconds,
+        excelSampleIntervalUnit: 'seconds'
+      }
+    }
+
+    const minutesValue = legacyExcelSampleSeconds / 60
+    if (isValidExcelSampleIntervalValue(minutesValue)) {
+      return {
+        subject,
+        note,
+        privateMode,
+        excelSampleIntervalValue: minutesValue,
+        excelSampleIntervalUnit: 'minutes'
+      }
+    }
+  }
+
+  return {
+    subject,
+    note,
+    privateMode,
+    excelSampleIntervalValue: DEFAULT_EXCEL_SAMPLE_INTERVAL_VALUE,
+    excelSampleIntervalUnit: DEFAULT_EXCEL_SAMPLE_INTERVAL_UNIT
+  }
 }
 
 const loadPersistedReportMeta = (): TrendReportPersistedMeta | null => {
@@ -152,6 +396,18 @@ const loadPersistedReportMeta = (): TrendReportPersistedMeta | null => {
     return null
   }
 }
+
+const toSharedTrendConfigPayload = (
+  config: TrendScreenPersistedState
+): Omit<SharedTrendConfig, 'updatedAt'> => ({
+  selectedVarIds: config.selectedVarIds,
+  selectedManualIds: config.selectedManualIds,
+  timeRange: config.timeRange,
+  rangeMode: config.rangeMode,
+  customRange: config.customRange,
+  yAxisScale: config.yAxisScale,
+  seriesColorOverrides: config.seriesColorOverrides
+})
 
 const persistTrendConfig = (config: TrendScreenPersistedState): void => {
   if (!isBrowser()) return
@@ -180,24 +436,50 @@ const persistReportMeta = (meta: TrendReportPersistedMeta): void => {
   }
 }
 
-const DEFAULT_DEVICE_ID: DeviceId = 'drive_avid'
+const MOTOR_SCOPES: MotorScope[] = [1, 2]
 
 export const useTrendScreenState = () => {
+  const { isViewOnly } = useAccessMode()
+  const [motorControlMode] = useMotorControlModePreference()
+  const singleMotorScope = usePreferredSingleMotorScope()
+  const [temperatureUnit] = useTemperatureUnitPreference()
+  const displayNameOverrides = useWagoDisplayNameOverrides()
+  const isDualMotorMode = motorControlMode === 'dual'
+  const activeSingleMotorScope: MotorScope = singleMotorScope
+  const shouldLoadMotorOneTrendData = isDualMotorMode || activeSingleMotorScope === 1
+  const shouldLoadMotorTwoTrendData = isDualMotorMode || activeSingleMotorScope === 2
   const storedConfig = useMemo(() => loadPersistedTrendConfig(), [])
   const storedEmails = useMemo(() => loadPersistedEmailList(), [])
   const storedReportMeta = useMemo(() => loadPersistedReportMeta(), [])
+  const initialTimeRange = storedConfig?.timeRange ?? DEFAULT_TIME_RANGE
+  const initialCustomRange = storedConfig?.customRange
+  const initialRangeDraft = initialCustomRange ?? buildRelativeRangeInput(initialTimeRange)
 
   // Base state
-  const [selectedVarIds, setSelectedVarIds] = useState<ParameterId[]>(
+  const [selectedVarIds, setSelectedVarIds] = useState<TrendVariableId[]>(
     storedConfig?.selectedVarIds ?? DEFAULT_SELECTED_VAR_IDS
   )
-  const [timeRange, setTimeRange] = useState<number>(storedConfig?.timeRange ?? DEFAULT_TIME_RANGE)
-  const [activePanel, setActivePanel] = useState<'none' | 'variables' | 'manual' | 'report'>('none')
+  const [timeRange, setTimeRange] = useState<number>(initialTimeRange)
+  const [rangeMode, setRangeMode] = useState<TrendRangeMode>(storedConfig?.rangeMode ?? 'relative')
+  const [customRange, setCustomRange] = useState<TrendCustomRange | null>(
+    initialCustomRange ?? null
+  )
+  const [customRangeDraft, setCustomRangeDraft] = useState<TrendCustomRange>(initialRangeDraft)
+  const [yAxisScale, setYAxisScale] = useState<TrendYAxisScaleState>(
+    storedConfig?.yAxisScale ?? DEFAULT_Y_AXIS_SCALE
+  )
+  const [seriesColorOverrides, setSeriesColorOverrides] = useState<TrendSeriesColorOverrides>(
+    storedConfig?.seriesColorOverrides ?? {}
+  )
+  const [activePanel, setActivePanel] = useState<
+    'none' | 'variables' | 'manual' | 'report' | 'scale'
+  >('none')
 
   // Derived states for backward compatibility
   const isConfigOpen = activePanel === 'variables'
   const isReportOpen = activePanel === 'report'
   const isManualPanelOpen = activePanel === 'manual'
+  const isScalePanelOpen = activePanel === 'scale'
 
   const setIsConfigOpen = (val: boolean | ((prev: boolean) => boolean)): void => {
     const next = typeof val === 'function' ? val(activePanel === 'variables') : val
@@ -214,6 +496,11 @@ export const useTrendScreenState = () => {
     setActivePanel(next ? 'manual' : 'none')
   }
 
+  const setIsScalePanelOpen = (val: boolean | ((prev: boolean) => boolean)): void => {
+    const next = typeof val === 'function' ? val(activePanel === 'scale') : val
+    setActivePanel(next ? 'scale' : 'none')
+  }
+
   // Report state
   const [emailList, setEmailList] = useState<string[]>(storedEmails ?? ['admin@plant.com'])
   const [newEmail, setNewEmailValue] = useState('')
@@ -222,6 +509,12 @@ export const useTrendScreenState = () => {
   const [reportSubject, setReportSubject] = useState<string>(storedReportMeta?.subject ?? '')
   const [reportNote, setReportNote] = useState<string>(storedReportMeta?.note ?? '')
   const [privateMode, setPrivateMode] = useState<boolean>(storedReportMeta?.privateMode ?? false)
+  const [excelSampleIntervalValue, setExcelSampleIntervalValue] = useState<number>(
+    storedReportMeta?.excelSampleIntervalValue ?? DEFAULT_EXCEL_SAMPLE_INTERVAL_VALUE
+  )
+  const [excelSampleIntervalUnit, setExcelSampleIntervalUnit] = useState<ExcelSampleIntervalUnit>(
+    storedReportMeta?.excelSampleIntervalUnit ?? DEFAULT_EXCEL_SAMPLE_INTERVAL_UNIT
+  )
 
   // Manual trend state
   const [manualSeries, setManualSeries] = useState<ManualTrendSeries[]>([])
@@ -245,10 +538,316 @@ export const useTrendScreenState = () => {
     pointId: undefined
   })
 
+  const validatedCustomRange = useMemo(
+    () => validateTrendCustomRange(customRangeDraft),
+    [customRangeDraft]
+  )
+  const activeCustomRange = useMemo(() => {
+    if (rangeMode !== 'absolute' || !customRange) return null
+
+    const validation = validateTrendCustomRange(customRange)
+    if (!validation.ok) return null
+
+    return {
+      ...validation,
+      startTime: validation.startDate.toISOString(),
+      endTime: validation.endDate.toISOString()
+    }
+  }, [customRange, rangeMode])
+  const effectiveTimeRange = activeCustomRange?.durationMinutes ?? timeRange
+  const activeRangeSummary = useMemo(
+    () => formatTrendRangeSummary(rangeMode === 'absolute' ? customRange : null),
+    [customRange, rangeMode]
+  )
+  const customRangeError = validatedCustomRange.ok ? null : validatedCustomRange.error
+  const canApplyCustomRange =
+    validatedCustomRange.ok &&
+    (rangeMode !== 'absolute' ||
+      customRange?.start !== validatedCustomRange.normalized.start ||
+      customRange?.end !== validatedCustomRange.normalized.end)
+  const maxRangeDateTime = nowLocalMinuteInput()
+
+  useEffect(() => {
+    if (customRange) return
+    setCustomRangeDraft(buildRelativeRangeInput(timeRange))
+  }, [customRange, timeRange])
+
   // Data hooks
-  const { datasets: sensorDatasets, xDomain } = useTrendData(DEFAULT_DEVICE_ID, selectedVarIds, {
-    windowMinutes: timeRange
-  })
+  const selectedDriveVarIds = useMemo(
+    () =>
+      selectedVarIds.filter((id): id is ParameterId => {
+        const variable = TREND_AVAILABLE_VARIABLES_BY_ID.get(id)
+        return variable?.deviceRole === 'drive' && variable.dataSource === 'backend'
+      }),
+    [selectedVarIds]
+  )
+
+  const selectedWagoVarIds = useMemo(
+    () =>
+      selectedVarIds.filter((id): id is ParameterId => {
+        const variable = TREND_AVAILABLE_VARIABLES_BY_ID.get(id)
+        return variable?.deviceRole === 'wago' && variable.dataSource === 'backend'
+      }),
+    [selectedVarIds]
+  )
+  const selectedWagoIoVarIds = useMemo(
+    () => selectedVarIds.filter((id): id is WagoIoTrendVariableId => isWagoIoTrendVariableId(id)),
+    [selectedVarIds]
+  )
+  const selectedMainTemperatureVarIds = useMemo(
+    () =>
+      selectedWagoVarIds.filter((id) => MAIN_SCREEN_TEMPERATURE_PARAMETER_ID_SET.has(id)),
+    [selectedWagoVarIds]
+  )
+  const selectedLiveWagoVarIds = useMemo(
+    () => selectedWagoVarIds.filter((id) => CORRECTED_WAGO_LIVE_TREND_PARAMETER_ID_SET.has(id)),
+    [selectedWagoVarIds]
+  )
+  const selectedLegacyWagoVarIds = useMemo(
+    () =>
+      selectedWagoVarIds.filter(
+        (id) =>
+          !CORRECTED_WAGO_LIVE_TREND_PARAMETER_ID_SET.has(id) &&
+          !MAIN_SCREEN_TEMPERATURE_PARAMETER_ID_SET.has(id)
+      ),
+    [selectedWagoVarIds]
+  )
+
+  const motorOneDriveId = getMotorDriveDeviceId(1)
+  const motorOneWagoId = getMotorWagoDeviceId(1)
+  const motorOneWagoLiveTrendId = getMotorWagoLiveDeviceId(1)
+  const motorTwoDriveId = getMotorDriveDeviceId(2)
+  const motorTwoWagoId = getMotorWagoDeviceId(2)
+  const motorTwoWagoLiveTrendId = getMotorWagoLiveDeviceId(2)
+
+  const { datasets: motorOneDriveSensorDatasets, xDomain: motorOneDriveXDomain } = useTrendData(
+    motorOneDriveId,
+    shouldLoadMotorOneTrendData ? selectedDriveVarIds : [],
+    {
+      windowMinutes: effectiveTimeRange,
+      startTime: activeCustomRange?.startTime,
+      endTime: activeCustomRange?.endTime,
+      realtime: rangeMode === 'relative'
+    }
+  )
+
+  const { datasets: motorOneWagoSensorDatasets, xDomain: motorOneWagoXDomain } = useTrendData(
+    motorOneWagoId,
+    shouldLoadMotorOneTrendData ? selectedLegacyWagoVarIds : [],
+    {
+      windowMinutes: effectiveTimeRange,
+      startTime: activeCustomRange?.startTime,
+      endTime: activeCustomRange?.endTime,
+      realtime: rangeMode === 'relative'
+    }
+  )
+
+  const { datasets: motorOneWagoLiveSensorDatasets, xDomain: motorOneWagoLiveXDomain } =
+    useTrendData(
+      motorOneWagoLiveTrendId,
+      shouldLoadMotorOneTrendData ? selectedLiveWagoVarIds : [],
+      {
+        windowMinutes: effectiveTimeRange,
+        startTime: activeCustomRange?.startTime,
+        endTime: activeCustomRange?.endTime,
+        realtime: rangeMode === 'relative'
+      }
+    )
+  const { datasets: motorOneMainTemperatureDatasets, xDomain: motorOneMainTemperatureXDomain } =
+    useMainTemperatureTrendData(
+      motorOneWagoLiveTrendId,
+      1,
+      shouldLoadMotorOneTrendData ? selectedMainTemperatureVarIds : [],
+      {
+        windowMinutes: effectiveTimeRange,
+        startTime: activeCustomRange?.startTime,
+        endTime: activeCustomRange?.endTime,
+        realtime: rangeMode === 'relative'
+      }
+    )
+
+  const { datasets: motorTwoDriveSensorDatasets, xDomain: motorTwoDriveXDomain } = useTrendData(
+    motorTwoDriveId,
+    shouldLoadMotorTwoTrendData ? selectedDriveVarIds : [],
+    {
+      windowMinutes: effectiveTimeRange,
+      startTime: activeCustomRange?.startTime,
+      endTime: activeCustomRange?.endTime,
+      realtime: rangeMode === 'relative'
+    }
+  )
+
+  const { datasets: motorTwoWagoSensorDatasets, xDomain: motorTwoWagoXDomain } = useTrendData(
+    motorTwoWagoId,
+    shouldLoadMotorTwoTrendData ? selectedLegacyWagoVarIds : [],
+    {
+      windowMinutes: effectiveTimeRange,
+      startTime: activeCustomRange?.startTime,
+      endTime: activeCustomRange?.endTime,
+      realtime: rangeMode === 'relative'
+    }
+  )
+
+  const { datasets: motorTwoWagoLiveSensorDatasets, xDomain: motorTwoWagoLiveXDomain } =
+    useTrendData(
+      motorTwoWagoLiveTrendId,
+      shouldLoadMotorTwoTrendData ? selectedLiveWagoVarIds : [],
+      {
+        windowMinutes: effectiveTimeRange,
+        startTime: activeCustomRange?.startTime,
+        endTime: activeCustomRange?.endTime,
+        realtime: rangeMode === 'relative'
+      }
+    )
+  const { datasets: motorTwoMainTemperatureDatasets, xDomain: motorTwoMainTemperatureXDomain } =
+    useMainTemperatureTrendData(
+      motorTwoWagoLiveTrendId,
+      2,
+      shouldLoadMotorTwoTrendData ? selectedMainTemperatureVarIds : [],
+      {
+        windowMinutes: effectiveTimeRange,
+        startTime: activeCustomRange?.startTime,
+        endTime: activeCustomRange?.endTime,
+        realtime: rangeMode === 'relative'
+      }
+    )
+
+  const { datasets: motorOneWagoIoDatasets, xDomain: motorOneWagoIoXDomain } = useWagoIoTrendData(
+    motorOneWagoId,
+    shouldLoadMotorOneTrendData ? selectedWagoIoVarIds : [],
+    {
+      windowMinutes: effectiveTimeRange,
+      startTime: activeCustomRange?.startTime,
+      endTime: activeCustomRange?.endTime,
+      realtime: true,
+      temperatureUnit
+    }
+  )
+
+  const { datasets: motorTwoWagoIoDatasets, xDomain: motorTwoWagoIoXDomain } = useWagoIoTrendData(
+    motorTwoWagoId,
+    shouldLoadMotorTwoTrendData ? selectedWagoIoVarIds : [],
+    {
+      windowMinutes: effectiveTimeRange,
+      startTime: activeCustomRange?.startTime,
+      endTime: activeCustomRange?.endTime,
+      realtime: true,
+      temperatureUnit
+    }
+  )
+
+  const motorOneSensorDatasets = useMemo(() => {
+    const sensorDatasetsById = new Map(
+      [
+        ...motorOneDriveSensorDatasets,
+        ...motorOneWagoSensorDatasets,
+        ...motorOneWagoLiveSensorDatasets,
+        ...motorOneMainTemperatureDatasets,
+        ...motorOneWagoIoDatasets
+      ].map((dataset) => [dataset.parameterId, dataset] as const)
+    )
+
+    return selectedVarIds
+      .map((id) => sensorDatasetsById.get(id))
+      .filter((dataset): dataset is TrendSensorDataset => Boolean(dataset))
+  }, [
+    motorOneDriveSensorDatasets,
+    motorOneWagoSensorDatasets,
+    motorOneWagoLiveSensorDatasets,
+    motorOneMainTemperatureDatasets,
+    motorOneWagoIoDatasets,
+    selectedVarIds
+  ])
+
+  const motorTwoSensorDatasets = useMemo(() => {
+    const sensorDatasetsById = new Map(
+      [
+        ...motorTwoDriveSensorDatasets,
+        ...motorTwoWagoSensorDatasets,
+        ...motorTwoWagoLiveSensorDatasets,
+        ...motorTwoMainTemperatureDatasets,
+        ...motorTwoWagoIoDatasets
+      ].map((dataset) => [dataset.parameterId, dataset] as const)
+    )
+
+    return selectedVarIds
+      .map((id) => sensorDatasetsById.get(id))
+      .filter((dataset): dataset is TrendSensorDataset => Boolean(dataset))
+  }, [
+    motorTwoDriveSensorDatasets,
+    motorTwoWagoSensorDatasets,
+    motorTwoWagoLiveSensorDatasets,
+    motorTwoMainTemperatureDatasets,
+    motorTwoWagoIoDatasets,
+    selectedVarIds
+  ])
+
+  const sensorDatasets = isDualMotorMode
+    ? motorOneSensorDatasets
+    : activeSingleMotorScope === 2
+      ? motorTwoSensorDatasets
+      : motorOneSensorDatasets
+
+  const xDomain = useMemo(() => {
+    const sensorDomains = (
+      isDualMotorMode
+        ? [
+            motorOneDriveXDomain,
+            motorOneWagoXDomain,
+            motorOneWagoLiveXDomain,
+            motorOneMainTemperatureXDomain,
+            motorOneWagoIoXDomain,
+            motorTwoDriveXDomain,
+            motorTwoWagoXDomain,
+            motorTwoWagoLiveXDomain,
+            motorTwoMainTemperatureXDomain,
+            motorTwoWagoIoXDomain
+          ]
+        : activeSingleMotorScope === 2
+          ? [
+              motorTwoDriveXDomain,
+              motorTwoWagoXDomain,
+              motorTwoWagoLiveXDomain,
+              motorTwoMainTemperatureXDomain,
+              motorTwoWagoIoXDomain
+            ]
+          : [
+              motorOneDriveXDomain,
+              motorOneWagoXDomain,
+              motorOneWagoLiveXDomain,
+              motorOneMainTemperatureXDomain,
+              motorOneWagoIoXDomain
+            ]
+    ).filter((domain): domain is { min: number; max: number } => Boolean(domain))
+
+    if (!sensorDomains.length) {
+      return activeCustomRange
+        ? {
+            min: activeCustomRange.startDate.getTime() / 1000,
+            max: activeCustomRange.endDate.getTime() / 1000
+          }
+        : null
+    }
+
+    return {
+      min: Math.min(...sensorDomains.map((domain) => domain.min)),
+      max: Math.max(...sensorDomains.map((domain) => domain.max))
+    }
+  }, [
+    motorOneDriveXDomain,
+    motorOneWagoXDomain,
+    motorOneWagoLiveXDomain,
+    motorOneMainTemperatureXDomain,
+    motorOneWagoIoXDomain,
+    motorTwoDriveXDomain,
+    motorTwoWagoXDomain,
+    motorTwoWagoLiveXDomain,
+    motorTwoMainTemperatureXDomain,
+    motorTwoWagoIoXDomain,
+    isDualMotorMode,
+    activeSingleMotorScope,
+    activeCustomRange
+  ])
 
   const manualSelectedSeries = useMemo(
     () => manualSeries.filter((s) => selectedManualIds.includes(s.id)),
@@ -260,7 +859,9 @@ export const useTrendScreenState = () => {
     xDomain: manualXDomain,
     reload: reloadManualData
   } = useManualTrendData(manualSelectedSeries, {
-    windowMinutes: timeRange
+    windowMinutes: effectiveTimeRange,
+    startTime: activeCustomRange?.startTime,
+    endTime: activeCustomRange?.endTime
   })
 
   useEffect(() => {
@@ -291,23 +892,178 @@ export const useTrendScreenState = () => {
   }, [manualSeries, hasLoadedManualSeries])
 
   useEffect(() => {
-    persistTrendConfig({ selectedVarIds, selectedManualIds, timeRange })
-  }, [selectedVarIds, selectedManualIds, timeRange])
+    if (!hasLoadedManualSeries) return
+
+    setSeriesColorOverrides((prev) => {
+      let changed = false
+      const validManualIds = new Set(manualSeries.map((series) => series.id))
+      const next: TrendSeriesColorOverrides = {}
+
+      Object.entries(prev).forEach(([key, color]) => {
+        if (key.startsWith('manual:')) {
+          const manualId = Number(key.slice('manual:'.length))
+          if (!validManualIds.has(manualId)) {
+            changed = true
+            return
+          }
+        }
+
+        next[key] = color
+      })
+
+      return changed ? next : prev
+    })
+  }, [manualSeries, hasLoadedManualSeries])
+
+  const getSeriesColorKeyForState = useCallback(
+    (type: TrendSeriesColorType, id: string | number): string => getSeriesColorKey(type, id),
+    []
+  )
+
+  const sensorBaseColorMap = useMemo(
+    () =>
+      new Map(TREND_AVAILABLE_VARIABLES.map((variable) => [variable.id, variable.color] as const)),
+    []
+  )
+
+  const manualSeriesById = useMemo(
+    () => new Map(manualSeries.map((series) => [series.id, series] as const)),
+    [manualSeries]
+  )
+
+  const getEffectiveSensorColor = useCallback(
+    (id: TrendVariableId): string =>
+      seriesColorOverrides[getSeriesColorKeyForState('sensor', id)] ??
+      sensorBaseColorMap.get(id) ??
+      TREND_COLOR_PALETTE[0],
+    [seriesColorOverrides, getSeriesColorKeyForState, sensorBaseColorMap]
+  )
+
+  const getEffectiveManualColor = useCallback(
+    (id: number): string =>
+      seriesColorOverrides[getSeriesColorKeyForState('manual', id)] ??
+      manualSeriesById.get(id)?.color ??
+      TREND_COLOR_PALETTE[0],
+    [seriesColorOverrides, getSeriesColorKeyForState, manualSeriesById]
+  )
+
+  const setSeriesColorOverride = useCallback(
+    (type: TrendSeriesColorType, id: string | number, color: string): void => {
+      if (isViewOnly) return
+      if (!TREND_COLOR_SET.has(color)) return
+
+      const key = getSeriesColorKeyForState(type, id)
+      setSeriesColorOverrides((prev) => (prev[key] === color ? prev : { ...prev, [key]: color }))
+    },
+    [getSeriesColorKeyForState, isViewOnly]
+  )
+
+  const clearSeriesColorOverride = useCallback(
+    (type: TrendSeriesColorType, id: string | number): void => {
+      if (isViewOnly) return
+      const key = getSeriesColorKeyForState(type, id)
+      setSeriesColorOverrides((prev) => {
+        if (!(key in prev)) return prev
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
+    },
+    [getSeriesColorKeyForState, isViewOnly]
+  )
+
+  const updateCustomRangeDraft = useCallback(
+    (field: keyof TrendCustomRange, value: string): void => {
+      setCustomRangeDraft((prev) => (prev[field] === value ? prev : { ...prev, [field]: value }))
+    },
+    []
+  )
+
+  const applyCustomRange = useCallback((): boolean => {
+    if (!validatedCustomRange.ok) return false
+
+    setCustomRange(validatedCustomRange.normalized)
+    setRangeMode('absolute')
+    return true
+  }, [validatedCustomRange])
+
+  const clearCustomRange = useCallback((): void => {
+    setRangeMode('relative')
+  }, [])
+
+  const selectRelativeTimeRange = useCallback((minutes: number): void => {
+    setTimeRange(minutes)
+    setRangeMode('relative')
+  }, [])
+
+  useEffect(() => {
+    persistTrendConfig({
+      selectedVarIds,
+      selectedManualIds,
+      timeRange,
+      rangeMode,
+      customRange,
+      yAxisScale,
+      seriesColorOverrides
+    })
+  }, [
+    selectedVarIds,
+    selectedManualIds,
+    timeRange,
+    rangeMode,
+    customRange,
+    yAxisScale,
+    seriesColorOverrides
+  ])
+
+  useEffect(() => {
+    if (isViewOnly) return
+
+    const payload = toSharedTrendConfigPayload({
+      selectedVarIds,
+      selectedManualIds,
+      timeRange,
+      rangeMode,
+      customRange,
+      yAxisScale,
+      seriesColorOverrides
+    })
+
+    void saveSharedTrendConfig(payload).catch((err) => {
+      console.error('Failed to sync shared trend configuration', err)
+    })
+  }, [
+    selectedVarIds,
+    selectedManualIds,
+    timeRange,
+    rangeMode,
+    customRange,
+    yAxisScale,
+    seriesColorOverrides,
+    isViewOnly
+  ])
 
   useEffect(() => {
     persistEmailList(emailList)
   }, [emailList])
 
   useEffect(() => {
-    persistReportMeta({ subject: reportSubject, note: reportNote, privateMode })
-  }, [reportSubject, reportNote, privateMode])
+    persistReportMeta({
+      subject: reportSubject,
+      note: reportNote,
+      privateMode,
+      excelSampleIntervalValue,
+      excelSampleIntervalUnit
+    })
+  }, [reportSubject, reportNote, privateMode, excelSampleIntervalValue, excelSampleIntervalUnit])
 
   // Handlers
-  const handleToggleVar = (id: ParameterId): void => {
+  const handleToggleVar = (id: TrendVariableId): void => {
     setSelectedVarIds((prev) => (prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]))
   }
 
   const handleToggleManualSeries = (id: number): void => {
+    if (isViewOnly) return
     setSelectedManualIds((prev) =>
       prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id]
     )
@@ -316,14 +1072,20 @@ export const useTrendScreenState = () => {
   const loadManualPoints = useCallback(
     async (seriesId: number): Promise<void> => {
       try {
-        const res = await fetchManualHistory({ seriesId, limit: 200, windowMinutes: timeRange })
+        const res = await fetchManualHistory({
+          seriesId,
+          limit: 200,
+          windowMinutes: effectiveTimeRange,
+          startTime: activeCustomRange?.startTime,
+          endTime: activeCustomRange?.endTime
+        })
         setManualPoints(res.points)
         setManualPointsSeriesId(seriesId)
       } catch (err) {
         console.error('Failed to load manual points', err)
       }
     },
-    [timeRange]
+    [effectiveTimeRange, activeCustomRange]
   )
 
   const resetManualForm = (): void => {
@@ -527,18 +1289,49 @@ export const useTrendScreenState = () => {
     setEmailList((prev) => prev.filter((e) => normalizeEmail(e) !== normalized))
   }
 
-  const decoratedSensorDatasets = useMemo<ExtendedDataset[]>(
-    () =>
-      sensorDatasets.map((ds) => {
-        const meta = AVAILABLE_VARIABLES.find((v) => v.id === ds.parameterId)
+  const decorateSensorDatasetList = useCallback(
+    (datasets: TrendSensorDataset[], labelPrefix?: string): ExtendedDataset[] =>
+      datasets.map((ds) => {
+        const meta = TREND_AVAILABLE_VARIABLES_BY_ID.get(ds.parameterId)
+        const wagoIoMeta = getWagoIoTrendVariableMeta(ds.parameterId)
+        const adjustedData = wagoIoMeta
+          ? ds.data
+          : ds.data.map((point) => ({
+              ...point,
+              y: applyVariableDisplayValue(ds.parameterId as ParameterId, point.y, temperatureUnit)
+            }))
+        const baseLabel = getTrendVariableLabel(ds.parameterId, displayNameOverrides)
+
         return {
           ...ds,
-          label: meta?.label || ds.label || ds.parameterId,
-          unit: meta?.unit || ds.unit || null,
-          borderColor: meta?.color || ds.borderColor
+          data: adjustedData,
+          label: labelPrefix ? `${labelPrefix} - ${baseLabel}` : baseLabel,
+          unit: wagoIoMeta
+            ? getWagoIoTrendVariableDisplayUnit(
+                ds.parameterId as WagoIoTrendVariableId,
+                temperatureUnit
+              ) ||
+              ds.unit ||
+              null
+            : getVariableDisplayUnit(
+                ds.parameterId as ParameterId,
+                meta?.unit || ds.unit || null,
+                temperatureUnit
+              ),
+          borderColor: getEffectiveSensorColor(ds.parameterId)
         }
       }),
-    [sensorDatasets]
+    [displayNameOverrides, getEffectiveSensorColor, temperatureUnit]
+  )
+
+  const decoratedMotorOneSensorDatasets = useMemo<ExtendedDataset[]>(
+    () => decorateSensorDatasetList(motorOneSensorDatasets),
+    [decorateSensorDatasetList, motorOneSensorDatasets]
+  )
+
+  const decoratedMotorTwoSensorDatasets = useMemo<ExtendedDataset[]>(
+    () => decorateSensorDatasetList(motorTwoSensorDatasets),
+    [decorateSensorDatasetList, motorTwoSensorDatasets]
   )
 
   const decoratedManualDatasets = useMemo<ExtendedDataset[]>(
@@ -546,64 +1339,166 @@ export const useTrendScreenState = () => {
       manualDatasets.map((ds) => ({
         ...ds,
         label: ds.label || 'Manual series',
-        unit: ds.unit || null
+        unit: ds.unit || null,
+        borderColor: getEffectiveManualColor(ds.seriesId)
       })),
-    [manualDatasets]
+    [manualDatasets, getEffectiveManualColor]
+  )
+
+  const motorOneCombinedDatasets = useMemo<ExtendedDataset[]>(
+    () => [...decoratedMotorOneSensorDatasets, ...decoratedManualDatasets],
+    [decoratedMotorOneSensorDatasets, decoratedManualDatasets]
+  )
+
+  const motorTwoCombinedDatasets = useMemo<ExtendedDataset[]>(
+    () => [...decoratedMotorTwoSensorDatasets, ...decoratedManualDatasets],
+    [decoratedMotorTwoSensorDatasets, decoratedManualDatasets]
   )
 
   const combinedDatasets = useMemo<ExtendedDataset[]>(
-    () => [...decoratedSensorDatasets, ...decoratedManualDatasets],
-    [decoratedSensorDatasets, decoratedManualDatasets]
+    () =>
+      isDualMotorMode
+        ? [
+            ...decorateSensorDatasetList(
+              motorOneSensorDatasets,
+              getMotorScopeLabel(MOTOR_SCOPES[0])
+            ),
+            ...decorateSensorDatasetList(
+              motorTwoSensorDatasets,
+              getMotorScopeLabel(MOTOR_SCOPES[1])
+            ),
+            ...decoratedManualDatasets
+          ]
+        : activeSingleMotorScope === 2
+          ? motorTwoCombinedDatasets
+          : motorOneCombinedDatasets,
+    [
+      decorateSensorDatasetList,
+      motorOneSensorDatasets,
+      motorTwoSensorDatasets,
+      decoratedManualDatasets,
+      motorOneCombinedDatasets,
+      motorTwoCombinedDatasets,
+      isDualMotorMode,
+      activeSingleMotorScope
+    ]
   )
 
   const combinedXDomain = useMemo(() => {
-    const maxs: number[] = []
-    if (xDomain) {
-      maxs.push(xDomain.max)
-    }
-    if (manualXDomain) {
-      maxs.push(manualXDomain.max)
-    }
-    if (!maxs.length) return null
-    const max = Math.max(...maxs)
-    const min = max - timeRange * 60
-    return { min, max }
-  }, [xDomain, manualXDomain, timeRange])
+    const domains = [xDomain, manualXDomain].filter(
+      (domain): domain is { min: number; max: number } => Boolean(domain)
+    )
 
-  const currentValues: CurrentValueItem[] = useMemo(() => {
-    return combinedDatasets.map((ds) => {
+    if (!domains.length) {
+      return activeCustomRange
+        ? {
+            min: activeCustomRange.startDate.getTime() / 1000,
+            max: activeCustomRange.endDate.getTime() / 1000
+          }
+        : null
+    }
+
+    return {
+      min: Math.min(...domains.map((domain) => domain.min)),
+      max: Math.max(...domains.map((domain) => domain.max))
+    }
+  }, [xDomain, manualXDomain, activeCustomRange])
+
+  const buildCurrentValueItems = useCallback((datasets: ExtendedDataset[]): CurrentValueItem[] => {
+    return datasets.map((ds) => {
       const latest = ds.data.length > 0 ? ds.data[ds.data.length - 1].y : 0
-      const unit =
-        'parameterId' in ds
-          ? AVAILABLE_VARIABLES.find((v) => v.id === ds.parameterId)?.unit
-          : ds.unit
-      const isManual = ds.isManual === true || !('parameterId' in ds)
+      const parameterId =
+        'parameterId' in ds && typeof ds.parameterId === 'string'
+          ? (ds.parameterId as TrendVariableId)
+          : null
+      const isManual = ds.isManual === true || !parameterId
 
       return {
-        id: ds.label || ds.parameterId || 'manual',
-        label:
-          AVAILABLE_VARIABLES.find((v) => v.id === ds.parameterId)?.label ||
-          ds.label ||
-          ds.parameterId ||
-          'manual',
+        id: ds.label || parameterId || 'manual',
+        label: ds.label || parameterId || 'manual',
         color: ds.borderColor,
         value: latest,
-        unit,
+        unit: ds.unit,
         isManual
       }
     })
-  }, [combinedDatasets])
+  }, [])
+
+  const currentValues: CurrentValueItem[] = useMemo(
+    () =>
+      buildCurrentValueItems(
+        isDualMotorMode
+          ? combinedDatasets
+          : activeSingleMotorScope === 2
+            ? motorTwoCombinedDatasets
+            : motorOneCombinedDatasets
+      ),
+    [
+      buildCurrentValueItems,
+      combinedDatasets,
+      motorOneCombinedDatasets,
+      motorTwoCombinedDatasets,
+      isDualMotorMode,
+      activeSingleMotorScope
+    ]
+  )
+
+  const currentValuesByMotor = useMemo<Record<MotorScope, CurrentValueItem[]>>(
+    () => ({
+      1: buildCurrentValueItems(motorOneCombinedDatasets),
+      2: buildCurrentValueItems(motorTwoCombinedDatasets)
+    }),
+    [buildCurrentValueItems, motorOneCombinedDatasets, motorTwoCombinedDatasets]
+  )
+
+  const yAxisScaleError = useMemo(() => {
+    if (yAxisScale.mode !== 'manual') return null
+
+    const hasMin = yAxisScale.min.trim().length > 0
+    const hasMax = yAxisScale.max.trim().length > 0
+    if (!hasMin && !hasMax) return null
+    if (!hasMin || !hasMax) return 'Complete both Y-axis limits'
+
+    const min = parseScaleNumber(yAxisScale.min)
+    const max = parseScaleNumber(yAxisScale.max)
+    if (min === null || max === null) return 'Use valid numeric values'
+    if (min >= max) return 'Minimum must be smaller than maximum'
+
+    return null
+  }, [yAxisScale])
+
+  const resolvedYAxisScale = useMemo(() => {
+    if (yAxisScale.mode !== 'manual' || yAxisScaleError) return null
+
+    const min = parseScaleNumber(yAxisScale.min)
+    const max = parseScaleNumber(yAxisScale.max)
+    if (min === null || max === null) return null
+
+    return { min, max }
+  }, [yAxisScale, yAxisScaleError])
 
   return {
     // base toggles
     timeRange,
-    setTimeRange,
+    effectiveTimeRange,
+    rangeMode,
+    customRangeDraft,
+    customRangeError,
+    activeRangeSummary,
+    canApplyCustomRange,
+    maxRangeDateTime,
+    setTimeRange: selectRelativeTimeRange,
+    setCustomRangeDraft: updateCustomRangeDraft,
+    applyCustomRange,
+    clearCustomRange,
     isConfigOpen,
     setIsConfigOpen,
     isReportOpen,
     setIsReportOpen,
     isManualPanelOpen,
     setIsManualPanelOpen,
+    isScalePanelOpen,
+    setIsScalePanelOpen,
 
     // data
     selectedVarIds,
@@ -613,8 +1508,21 @@ export const useTrendScreenState = () => {
     manualDatasets,
     manualXDomain,
     combinedDatasets,
+    motorOneCombinedDatasets,
+    motorTwoCombinedDatasets,
     combinedXDomain,
     currentValues,
+    currentValuesByMotor,
+    trendColorPalette: TREND_COLOR_PALETTE,
+    getSeriesColorKey: getSeriesColorKeyForState,
+    getEffectiveSensorColor,
+    getEffectiveManualColor,
+    setSeriesColorOverride,
+    clearSeriesColorOverride,
+    yAxisScale,
+    setYAxisScale,
+    yAxisScaleError,
+    resolvedYAxisScale,
 
     // manual series
     manualSeries,
@@ -655,6 +1563,10 @@ export const useTrendScreenState = () => {
     setReportNote,
     privateMode,
     setPrivateMode,
+    excelSampleIntervalValue,
+    setExcelSampleIntervalValue,
+    excelSampleIntervalUnit,
+    setExcelSampleIntervalUnit,
 
     // meta
     reloadManualData

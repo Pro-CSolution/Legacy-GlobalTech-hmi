@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchManualHistory } from 'services'
 import { Dataset } from 'components/TrendChart/TrendChart.types'
-import { ManualTrendSeries } from 'services/manualTrendService'
+import { ManualTrendPoint, ManualTrendSeries } from 'services/manualTrendService'
 import { createKeyedThrottle, debugLog } from 'utils/debug'
 
 type UseManualTrendOptions = {
   windowMinutes?: number
+  startTime?: string
+  endTime?: string
   limit?: number
 }
 
@@ -33,16 +35,101 @@ const computeRetryDelayMs = (attempt: number): number => {
 const toSeconds = (iso: string | number): number =>
   typeof iso === 'number' ? iso : new Date(iso).getTime() / 1000
 
+const toIsoStringFromSeconds = (seconds: number): string => new Date(seconds * 1000).toISOString()
+
+const resolveAbsoluteRange = (
+  startTime?: string,
+  endTime?: string
+): { startSec: number; endSec: number } | null => {
+  if (!startTime || !endTime) return null
+
+  const startSec = toSeconds(startTime)
+  const endSec = toSeconds(endTime)
+  if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || !(endSec > startSec)) {
+    return null
+  }
+
+  return { startSec, endSec }
+}
+
+const mapManualPoint = (point: ManualTrendPoint): { x: number; y: number } => ({
+  x: toSeconds(point.time),
+  y: point.value
+})
+
+const buildCarryForwardPoints = ({
+  visiblePoints,
+  previousPoint,
+  windowStartSec,
+  windowEndSec
+}: {
+  visiblePoints: ManualTrendPoint[]
+  previousPoint?: ManualTrendPoint
+  windowStartSec: number
+  windowEndSec: number
+}): {
+  data: Array<{ x: number; y: number }>
+  syntheticStart: boolean
+  syntheticEnd: boolean
+} => {
+  const visible = visiblePoints
+    .map(mapManualPoint)
+    .filter(
+      (point) =>
+        Number.isFinite(point.x) &&
+        Number.isFinite(point.y) &&
+        point.x >= windowStartSec &&
+        point.x <= windowEndSec
+    )
+    .sort((a, b) => a.x - b.x)
+
+  const previous = previousPoint ? mapManualPoint(previousPoint) : null
+  const hasPrevious =
+    previous !== null &&
+    Number.isFinite(previous.x) &&
+    Number.isFinite(previous.y) &&
+    previous.x < windowStartSec
+
+  let syntheticStart = false
+  let syntheticEnd = false
+  const data = [...visible]
+
+  if (hasPrevious) {
+    const firstVisible = visible[0]
+    if (!firstVisible || firstVisible.x > windowStartSec) {
+      data.unshift({ x: windowStartSec, y: previous.y })
+      syntheticStart = true
+    }
+
+    if (!visible.length) {
+      data.push({ x: windowEndSec, y: previous.y })
+      syntheticEnd = true
+    }
+  }
+
+  return { data, syntheticStart, syntheticEnd }
+}
+
 export const useManualTrendData = (
   seriesList: ManualTrendSeries[],
-  { windowMinutes = 60, limit = 2000 }: UseManualTrendOptions = {}
+  { windowMinutes = 60, startTime, endTime, limit = 2000 }: UseManualTrendOptions = {}
 ) => {
   const [datasets, setDatasets] = useState<ManualDataset[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [xDomain, setXDomain] = useState<{ min: number; max: number } | null>(null)
 
-  const timeWindowSeconds = useMemo(() => windowMinutes * 60, [windowMinutes])
+  const absoluteRange = useMemo(
+    () => resolveAbsoluteRange(startTime, endTime),
+    [startTime, endTime]
+  )
+  const timeWindowSeconds = useMemo(() => {
+    if (absoluteRange) {
+      return absoluteRange.endSec - absoluteRange.startSec
+    }
+
+    return windowMinutes * 60
+  }, [absoluteRange, windowMinutes])
   const debugGate = useMemo(() => createKeyedThrottle(1500), [])
   const loadSeqRef = useRef(0)
   const retryAttemptRef = useRef(0)
@@ -79,39 +166,71 @@ export const useManualTrendData = (
       setIsLoading(true)
       const seq = ++loadSeqRef.current
       try {
+        const windowEndSec = absoluteRange?.endSec ?? Date.now() / 1000
+        const windowStartSec = absoluteRange?.startSec ?? windowEndSec - timeWindowSeconds
+        const startTime = toIsoStringFromSeconds(windowStartSec)
+        const endTime = toIsoStringFromSeconds(windowEndSec)
+
         if (debugGate('trend.manual.history.start')) {
           debugLog('trend.data', 'manual loadHistory start', {
             windowMinutes,
+            startTime,
+            endTime,
             timeWindowSeconds,
             limit,
+            windowStartSec,
+            windowEndSec,
             seriesList: seriesList.map((s) => ({ id: s.id, name: s.name }))
           })
         }
 
         const responses = await Promise.all(
-          seriesList.map((series) =>
-            fetchManualHistory({
-              seriesId: series.id,
-              windowMinutes,
-              limit
-            })
-          )
+          seriesList.map(async (series) => {
+            const [visible, previous] = await Promise.all([
+              fetchManualHistory({
+                seriesId: series.id,
+                startTime,
+                endTime,
+                limit
+              }),
+              fetchManualHistory({
+                seriesId: series.id,
+                endTime: startTime,
+                limit: 1
+              })
+            ])
+
+            return {
+              visible,
+              previous: previous.points.at(-1)
+            }
+          })
         )
+
         console.debug('[useManualTrendData] history responses', {
           seriesList: seriesList.map((s) => ({ id: s.id, name: s.name })),
-          counts: responses.map((r) => r.points.length)
+          counts: responses.map((r) => ({
+            visible: r.visible.points.length,
+            previous: r.previous ? 1 : 0
+          }))
         })
 
         const nextDatasets: ManualDataset[] = responses.map((resp, idx) => {
           const series = seriesList[idx]
-          const mapped = resp.points.map((p) => ({
-            x: toSeconds(p.time),
-            y: p.value
-          }))
+          const { data, syntheticStart, syntheticEnd } = buildCarryForwardPoints({
+            visiblePoints: resp.visible.points,
+            previousPoint: resp.previous,
+            windowStartSec,
+            windowEndSec
+          })
+
           console.debug('[useManualTrendData] mapped series', {
             series: series.name,
-            count: mapped.length,
-            sample: mapped.slice(-3)
+            count: data.length,
+            visibleCount: resp.visible.points.length,
+            syntheticStart,
+            syntheticEnd,
+            sample: data.slice(-3)
           })
 
           return {
@@ -120,7 +239,7 @@ export const useManualTrendData = (
             unit: series.unit,
             isManual: true,
             stepped: true,
-            data: mapped,
+            data,
             borderColor: series.color || '#3b82f6',
             backgroundColor: 'transparent',
             tension: 0,
@@ -130,12 +249,7 @@ export const useManualTrendData = (
         })
 
         setDatasets(nextDatasets)
-        const lastTs = Math.max(
-          ...nextDatasets.flatMap((ds) => ds.data.map((p) => p.x)),
-          Date.now() / 1000
-        )
-        setXDomain({ min: lastTs - timeWindowSeconds, max: lastTs })
-        // Éxito: limpiar estado de retry
+        setXDomain({ min: windowStartSec, max: windowEndSec })
         retryAttemptRef.current = 0
         clearRetryTimer()
         setError(null)
@@ -158,8 +272,7 @@ export const useManualTrendData = (
           })
 
           debugLog('trend.data', 'manual loadHistory done', {
-            xDomain: { min: lastTs - timeWindowSeconds, max: lastTs },
-            lastTs,
+            xDomain: { min: windowStartSec, max: windowEndSec },
             stats
           })
         }
@@ -186,7 +299,7 @@ export const useManualTrendData = (
         }
       }
     },
-    [limit, seriesList, timeWindowSeconds, windowMinutes, debugGate, clearRetryTimer]
+    [absoluteRange, limit, seriesList, timeWindowSeconds, windowMinutes, debugGate, clearRetryTimer]
   )
 
   useEffect(() => {

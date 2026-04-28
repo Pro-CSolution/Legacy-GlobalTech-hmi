@@ -192,6 +192,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       showGrid = true,
       showLegend = false,
       showTooltips = true,
+      enableXSelectionZoom = false,
       responsive = true,
       maintainAspectRatio = false, // kept for API parity (ResizeObserver handles sizing)
       showTitle = true,
@@ -199,7 +200,8 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       className,
       style,
       onDataPointClick,
-      onHover
+      onHover,
+      onXSelectionZoom
     },
     ref
   ) => {
@@ -218,11 +220,16 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       top: number
       xVal?: number
     } | null>(null)
+    const [zoomSelectionBox, setZoomSelectionBox] = useState<{
+      left: number
+      width: number
+    } | null>(null)
     const startTimeRef = useRef<number>(Date.now())
     const demoIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const latestDataRef = useRef<UPlotData>({ data: [], xValues: [], seriesValues: [] })
     const latestDatasetsRef = useRef<Dataset[]>([])
     const clickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null)
+    const suppressClickRef = useRef(false)
     const plotConfigKeyRef = useRef<string>('')
     const lastPointerRef = useRef<{
       clientX: number
@@ -230,6 +237,11 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       relX: number
       relY: number
       at: number
+    } | null>(null)
+    const zoomPointerRef = useRef<{
+      pointerId: number
+      startLeft: number
+      currentLeft: number
     } | null>(null)
 
     const debugGate = useMemo(() => createKeyedThrottle(600), [])
@@ -253,6 +265,130 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       el.addEventListener('pointermove', onPointerMove)
       return () => el.removeEventListener('pointermove', onPointerMove)
     }, [])
+
+    const clearZoomSelection = useCallback(() => {
+      zoomPointerRef.current = null
+      setZoomSelectionBox(null)
+    }, [])
+
+    const normalizePointerLeft = useCallback((clientX: number): number | null => {
+      const plot = plotInstanceRef.current
+      const over = plot?.over as HTMLElement | undefined
+      if (!over) return null
+
+      const rect = over.getBoundingClientRect()
+      const offsetW = over.offsetWidth || rect.width || 1
+      const scaleX = rect.width / offsetW
+      const rawLeft = clientX - rect.left
+      const left = scaleX ? rawLeft / scaleX : rawLeft
+
+      return Math.max(0, Math.min(left, offsetW))
+    }, [])
+
+    useEffect(() => {
+      const el = plotContainerRef.current
+      if (!el || !enableXSelectionZoom) {
+        clearZoomSelection()
+        return
+      }
+
+      const MIN_DRAG_PX = 24
+
+      const updateSelectionBox = (startLeft: number, currentLeft: number) => {
+        const left = Math.min(startLeft, currentLeft)
+        const width = Math.abs(currentLeft - startLeft)
+        setZoomSelectionBox({ left, width })
+      }
+
+      const handlePointerDown = (ev: PointerEvent) => {
+        if (ev.pointerType === 'mouse' && ev.button !== 0) return
+
+        const startLeft = normalizePointerLeft(ev.clientX)
+        if (startLeft === null) return
+
+        zoomPointerRef.current = {
+          pointerId: ev.pointerId,
+          startLeft,
+          currentLeft: startLeft
+        }
+        updateSelectionBox(startLeft, startLeft)
+
+        if (typeof el.setPointerCapture === 'function') {
+          try {
+            el.setPointerCapture(ev.pointerId)
+          } catch {
+            // Non-fatal: pointer capture may not be available on every platform.
+          }
+        }
+
+        ev.preventDefault()
+      }
+
+      const handlePointerMove = (ev: PointerEvent) => {
+        const selection = zoomPointerRef.current
+        if (!selection || selection.pointerId !== ev.pointerId) return
+
+        const currentLeft = normalizePointerLeft(ev.clientX)
+        if (currentLeft === null) return
+
+        selection.currentLeft = currentLeft
+        updateSelectionBox(selection.startLeft, currentLeft)
+        ev.preventDefault()
+      }
+
+      const finalizeSelection = (ev: PointerEvent) => {
+        const selection = zoomPointerRef.current
+        if (!selection || selection.pointerId !== ev.pointerId) return
+
+        const currentLeft = normalizePointerLeft(ev.clientX) ?? selection.currentLeft
+        const dragWidth = Math.abs(currentLeft - selection.startLeft)
+        clearZoomSelection()
+
+        if (typeof el.releasePointerCapture === 'function') {
+          try {
+            el.releasePointerCapture(ev.pointerId)
+          } catch {
+            // Ignore release errors if capture was never acquired.
+          }
+        }
+
+        if (dragWidth < MIN_DRAG_PX) return
+
+        const plot = plotInstanceRef.current
+        if (!plot) return
+
+        const min = plot.posToVal(Math.min(selection.startLeft, currentLeft), 'x')
+        const max = plot.posToVal(Math.max(selection.startLeft, currentLeft), 'x')
+        if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return
+
+        suppressClickRef.current = true
+        window.setTimeout(() => {
+          suppressClickRef.current = false
+        }, 0)
+
+        onXSelectionZoom?.({ min, max })
+        ev.preventDefault()
+      }
+
+      const handlePointerCancel = (ev: PointerEvent) => {
+        const selection = zoomPointerRef.current
+        if (!selection || selection.pointerId !== ev.pointerId) return
+
+        clearZoomSelection()
+      }
+
+      el.addEventListener('pointerdown', handlePointerDown)
+      el.addEventListener('pointermove', handlePointerMove)
+      el.addEventListener('pointerup', finalizeSelection)
+      el.addEventListener('pointercancel', handlePointerCancel)
+
+      return () => {
+        el.removeEventListener('pointerdown', handlePointerDown)
+        el.removeEventListener('pointermove', handlePointerMove)
+        el.removeEventListener('pointerup', finalizeSelection)
+        el.removeEventListener('pointercancel', handlePointerCancel)
+      }
+    }, [clearZoomSelection, enableXSelectionZoom, normalizePointerLeft, onXSelectionZoom])
 
     // Memoize demo config with defaults
     const mergedDemoConfig = useMemo<DemoDataConfig>(
@@ -449,6 +585,24 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
                 : undefined
           }))
         ] satisfies uPlot.Series[],
+      [activeDatasets, colors.line, theme.colors.accent.secondary]
+    )
+
+    const seriesStyleKey = useMemo(
+      () =>
+        activeDatasets
+          .map((dataset, index) => {
+            const stroke =
+              dataset.borderColor || (index === 0 ? colors.line : theme.colors.accent.secondary)
+            const fill = dataset.fill ? dataset.backgroundColor || 'transparent' : 'none'
+            const width = dataset.borderWidth || 1.5
+            const points = (dataset.pointRadius ?? 0) > 0 ? 'points' : 'line'
+            const stepped = dataset.stepped ? 'stepped' : 'smooth'
+            const label = dataset.label || `Dataset ${index + 1}`
+
+            return [label, stroke, fill, width, points, stepped].join('|')
+          })
+          .join('||'),
       [activeDatasets, colors.line, theme.colors.accent.secondary]
     )
 
@@ -821,6 +975,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       }
 
       const clickHandler = () => {
+        if (suppressClickRef.current) return
         const idx = plot.cursor.idx
         if (idx == null || idx < 0 || !onDataPointClick) return
         const hit = findNearestPoint(
@@ -856,8 +1011,10 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       xTickStepSec,
       xTickFormatter,
       yTickFormatter,
+      activeDatasets,
       uPlotSeries,
       uplotData.data,
+      uplotData.xValues.length,
       width
     ])
 
@@ -873,7 +1030,7 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       const currentSeriesCount = plotInstanceRef.current?.series.length || 0
       const expectedSeriesCount = uPlotSeries.length
 
-      const configKey = `${timeWindow}|${xTickStepSec ?? 'auto'}`
+      const configKey = `${timeWindow}|${xTickStepSec ?? 'auto'}|${seriesStyleKey}`
       const needsRecreate =
         currentSeriesCount !== expectedSeriesCount || plotConfigKeyRef.current !== configKey
 
@@ -912,9 +1069,13 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
       uplotData,
       createPlot,
       applyScales,
+      activeDatasets,
+      debugGate,
       destroyPlot,
+      seriesStyleKey,
       timeWindow,
-      xTickStepSec
+      xTickStepSec,
+      uplotData.xValues.length
     ])
 
     // Cleanup on unmount
@@ -1117,7 +1278,32 @@ const TrendChart = forwardRef<TrendChartRef, TrendChartProps>(
           </TitleBar>
         )}
         <ChartWrapper $compact={isCompact}>
-          <div ref={plotContainerRef} style={{ width: '100%', height: '100%' }} />
+          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+            <div
+              ref={plotContainerRef}
+              style={{
+                width: '100%',
+                height: '100%',
+                touchAction: enableXSelectionZoom ? 'none' : 'auto'
+              }}
+            />
+            {enableXSelectionZoom && zoomSelectionBox && zoomSelectionBox.width > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  bottom: 8,
+                  left: zoomSelectionBox.left,
+                  width: zoomSelectionBox.width,
+                  border: `1px solid ${theme.colors.accent.primary}`,
+                  background: `${theme.colors.accent.primary}22`,
+                  boxShadow: `0 0 0 1px ${theme.colors.accent.primary}33 inset`,
+                  pointerEvents: 'none',
+                  zIndex: 2
+                }}
+              />
+            )}
+          </div>
 
           {showLegend && (
             <LegendContainer>

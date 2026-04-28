@@ -5,6 +5,7 @@ export interface HmiData {
   maxValue?: number
   minValue?: number
   value?: number
+  displayValueText?: string
   degradedColor?: CSSProperties['backgroundColor']
   unitOfMeasure?: string
   endLL?: number

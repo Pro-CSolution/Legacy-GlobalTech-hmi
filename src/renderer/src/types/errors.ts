@@ -42,6 +42,12 @@ export function getErrorMessage(error: unknown, fallback = 'An unknown error occ
  */
 export interface AxiosErrorLike {
   message: string
+  code?: string
+  config?: {
+    method?: string
+    url?: string
+    baseURL?: string
+  }
   response?: {
     data?: unknown
     status?: number

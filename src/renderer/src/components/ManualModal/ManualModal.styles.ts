@@ -1,7 +1,7 @@
 import styled from 'styled-components'
 
 export const ManualModalBody = styled.div`
-  height: min(86vh, 980px);
+  height: 100vh;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -48,7 +48,7 @@ export const ManualModalClose = styled.button`
 
 export const ManualModalContent = styled.div`
   flex: 1;
-  padding: 14px 18px 18px 18px;
+  padding: 10px 14px 14px;
   overflow: hidden;
   min-height: 0;
 `

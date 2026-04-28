@@ -19,6 +19,7 @@ export type DriveParameter = {
   range_text?: string
   default?: string | number | null
   modbus_address?: number | null
+  scale_factor: number
   options?: DriveParameterOption[] | null
 }
 

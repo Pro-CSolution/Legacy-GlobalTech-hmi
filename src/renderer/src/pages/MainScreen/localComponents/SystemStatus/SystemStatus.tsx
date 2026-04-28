@@ -9,7 +9,6 @@ interface SystemStatusProps extends PositionProps {
   controlState: {
     mode: string
     breaker: string
-    vfdCoolant: string
     blower: string
     motorTempWarn: string
     motorTempHigh: string
@@ -36,12 +35,6 @@ export const SystemStatus = ({
             status={controlState.breaker}
             onLabel="CLOSED"
             offLabel="OPEN"
-          />
-          <StatusBadge
-            label="VFD Coolant"
-            status={controlState.vfdCoolant}
-            onLabel="OK"
-            faultLabel="FAULT"
           />
           <StatusBadge
             label="Motor Blower"

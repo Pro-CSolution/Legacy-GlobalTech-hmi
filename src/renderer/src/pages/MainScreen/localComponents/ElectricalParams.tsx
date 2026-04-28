@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { type TouchEvent as ReactTouchEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { Zap } from 'lucide-react'
 import Card from 'components/Card'
 import Gauge, { HmiData } from 'components/Gauge'
@@ -13,7 +13,21 @@ import { PositionProps } from 'styles/mixins'
 import { useOnDemandParameters } from 'hooks/useOnDemandParameters'
 import { AVAILABLE_VARIABLES } from 'pages/TrendScreen/constants'
 import { DeviceId, PARAMETER_ALIASES, PARAMETER_META, ParameterId } from 'types'
-import { ElectricalGrid, GaugeLabel, GaugeTile } from '../MainScreen.styles'
+import { isSingleTouchContact, MULTI_TOUCH_CANCEL_EVENT } from 'utils/touch'
+import { getMotorMonitorValueOverride } from '../monitorValueDisplay'
+import {
+  ElectricalGrid,
+  ElectricalHeaderMeta,
+  ElectricalMotorBadge,
+  ElectricalMotorTypeButton,
+  ElectricalMotorTypeLabel,
+  ElectricalMotorTypeValue,
+  ElectricalStatusButton,
+  ElectricalStatusLabel,
+  ElectricalStatusValue,
+  GaugeLabel,
+  GaugeTile
+} from '../MainScreen.styles'
 
 type ElectricalGaugeSlotId = 'lineVoltage' | 'frequency' | 'power' | 'current' | 'torque' | 'master'
 
@@ -141,6 +155,17 @@ const getDisplayMeta = (parameterId: ParameterId): { label: string; unit?: strin
   return { label: meta?.name || parameterId, unit: meta?.unit }
 }
 
+const formatParameterLabelWithId = (parameterId: ParameterId, label: string): string => {
+  const trimmedId = String(parameterId).trim()
+  const trimmedLabel = label.trim()
+
+  if (!trimmedId) return trimmedLabel
+  if (!trimmedLabel) return trimmedId
+  if (trimmedLabel.toUpperCase().includes(trimmedId.toUpperCase())) return trimmedLabel
+
+  return `${trimmedLabel} (${trimmedId})`
+}
+
 const buildVariableOptions = (snapshot: DeviceSnapshot): GaugeVariableOption[] => {
   const map = new Map<string, GaugeVariableOption>()
 
@@ -171,13 +196,21 @@ const buildVariableOptions = (snapshot: DeviceSnapshot): GaugeVariableOption[] =
 interface ElectricalParamsProps extends PositionProps {
   deviceId: DeviceId
   deviceSnapshot: DeviceSnapshot
+  mainBreakerStatus?: 'open' | 'closed' | 'unknown'
   height?: number
+  connectedMotorLabel?: string
+  motorType?: string
+  onMotorTypePress?: () => void
 }
 
 export const ElectricalParams = ({
   deviceId,
   deviceSnapshot,
+  mainBreakerStatus = 'unknown',
   height = 460,
+  connectedMotorLabel,
+  motorType = '',
+  onMotorTypePress,
   ...positionProps
 }: ElectricalParamsProps) => {
   const theme = useTheme()
@@ -242,6 +275,24 @@ export const ElectricalParams = ({
     }
   }
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const handleMultiTouchCancel = () => {
+      if (pressTimer.current) {
+        window.clearTimeout(pressTimer.current)
+        pressTimer.current = null
+      }
+    }
+
+    window.addEventListener(MULTI_TOUCH_CANCEL_EVENT, handleMultiTouchCancel)
+
+    return () => {
+      window.removeEventListener(MULTI_TOUCH_CANCEL_EVENT, handleMultiTouchCancel)
+      handleMultiTouchCancel()
+    }
+  }, [])
+
   const startPress = (slotId: ElectricalGaugeSlotId) => {
     cancelPress()
     pressTimer.current = window.setTimeout(() => {
@@ -249,10 +300,25 @@ export const ElectricalParams = ({
     }, LONG_PRESS_MS)
   }
 
+  const handleGaugeTouchStart = (
+    event: ReactTouchEvent<HTMLDivElement>,
+    slotId: ElectricalGaugeSlotId
+  ) => {
+    if (!isSingleTouchContact(event.nativeEvent)) {
+      cancelPress()
+      return
+    }
+
+    startPress(slotId)
+  }
+
   const editingConfig: GaugeConfigValue | null = editingSlot ? configBySlot[editingSlot] : null
   const editingTitle = 'Configure gauge'
   const editingSubtitle = editingConfig
-    ? getDisplayMeta(editingConfig.parameterId).label
+    ? formatParameterLabelWithId(
+        editingConfig.parameterId,
+        getDisplayMeta(editingConfig.parameterId).label
+      )
     : undefined
 
   const handleSave = (next: GaugeConfigValue) => {
@@ -265,6 +331,23 @@ export const ElectricalParams = ({
     setEditingSlot(null)
   }
 
+  const trimmedMotorType = motorType.trim()
+  const showMotorMeta = Boolean(connectedMotorLabel || onMotorTypePress)
+  const breakerStatusLabel =
+    mainBreakerStatus === 'closed'
+      ? 'Closed'
+      : mainBreakerStatus === 'open'
+        ? 'Open'
+        : 'Unknown'
+  const breakerStatusElement = (
+    <ElectricalStatusButton $status={mainBreakerStatus}>
+      <ElectricalStatusLabel>Main Breaker</ElectricalStatusLabel>
+      <ElectricalStatusValue $status={mainBreakerStatus}>
+        {breakerStatusLabel}
+      </ElectricalStatusValue>
+    </ElectricalStatusButton>
+  )
+
   return (
     <>
       <Panel width={1080} height={height} {...positionProps}>
@@ -272,7 +355,26 @@ export const ElectricalParams = ({
           title="Electrical Parameters"
           icon={Zap}
           height="100%"
-          headerRight="Hold any Gauge to edit"
+          headerRight={
+            showMotorMeta ? (
+              <ElectricalHeaderMeta>
+                {connectedMotorLabel ? (
+                  <ElectricalMotorBadge>{connectedMotorLabel}</ElectricalMotorBadge>
+                ) : null}
+
+                <ElectricalMotorTypeButton type="button" onClick={onMotorTypePress}>
+                  <ElectricalMotorTypeLabel>Motor Type</ElectricalMotorTypeLabel>
+                  <ElectricalMotorTypeValue $empty={!trimmedMotorType}>
+                    {trimmedMotorType || 'Tap to enter'}
+                  </ElectricalMotorTypeValue>
+                </ElectricalMotorTypeButton>
+
+                {breakerStatusElement}
+              </ElectricalHeaderMeta>
+            ) : (
+              breakerStatusElement
+            )
+          }
         >
           <ElectricalGrid>
             {gaugeSlots.map(({ slotId }) => {
@@ -280,10 +382,13 @@ export const ElectricalParams = ({
               const { label, unit } = getDisplayMeta(cfg.parameterId)
               const liveRaw = deviceSnapshot?.[cfg.parameterId]
               const value = toNumberOrUndefined(liveRaw)
+              const displayOverride =
+                value === undefined ? null : getMotorMonitorValueOverride(cfg.parameterId, value)
 
               const gaugeProps: HmiData = {
-                value,
-                unitOfMeasure: unit,
+                value: displayOverride?.gaugeValue ?? value,
+                displayValueText: displayOverride?.valueText,
+                unitOfMeasure: displayOverride?.unit ?? unit,
                 minValue: cfg.minValue,
                 maxValue: cfg.maxValue
               }
@@ -294,7 +399,7 @@ export const ElectricalParams = ({
                   onMouseDown={() => startPress(slotId)}
                   onMouseUp={cancelPress}
                   onMouseLeave={cancelPress}
-                  onTouchStart={() => startPress(slotId)}
+                  onTouchStart={(event) => handleGaugeTouchStart(event, slotId)}
                   onTouchEnd={cancelPress}
                   onTouchCancel={cancelPress}
                 >

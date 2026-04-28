@@ -15,22 +15,51 @@ export const ScreenContainer = styled.div`
   overflow: hidden;
   padding: 10px;
   gap: 10px;
+
+  @media (max-width: 768px) {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+    padding: 0;
+    gap: 12px;
+  }
 `
 
 export const Toolbar = styled.div`
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   background-color: ${({ theme }) => theme.colors.background.secondary}80; // 50% opacity
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   border-radius: ${({ theme }) => theme.borderRadius.md};
   padding: 8px;
   flex-shrink: 0;
+  gap: 12px;
+`
+
+export const ToolbarMain = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 1 1 720px;
+  min-width: 0;
+`
+
+export const ToolbarActions = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 1 auto;
 `
 
 export const ButtonGroup = styled.div`
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 `
 
 export const TimeButton = styled.button<{ $isActive?: boolean }>`
@@ -39,7 +68,8 @@ export const TimeButton = styled.button<{ $isActive?: boolean }>`
   color: ${({ $isActive, theme }) => ($isActive ? '#fff' : theme.colors.text.secondary)};
   border: 1px solid
     ${({ $isActive, theme }) => ($isActive ? theme.colors.accent.primary : 'transparent')};
-  padding: 4px 12px;
+  min-height: 40px;
+  padding: 0 14px;
   border-radius: ${({ theme }) => theme.borderRadius.sm};
   font-size: ${({ theme }) => theme.typography.sizes.xs};
   font-weight: ${({ theme }) => theme.typography.weights.bold};
@@ -51,6 +81,108 @@ export const TimeButton = styled.button<{ $isActive?: boolean }>`
     background-color: ${({ $isActive, theme }) =>
       $isActive ? theme.colors.accent.primary : theme.colors.background.tertiary};
   }
+`
+
+export const RangeTriggerButton = styled.button<{ $isActive?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid
+    ${({ $isActive, theme }) =>
+      $isActive ? `${theme.colors.accent.primary}CC` : theme.colors.borders.primary};
+  background: ${({ $isActive, theme }) =>
+    $isActive ? `${theme.colors.accent.primary}20` : 'transparent'};
+  color: ${({ $isActive, theme }) =>
+    $isActive ? theme.colors.text.primary : theme.colors.text.secondary};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text.primary};
+    border-color: ${({ theme }) => theme.colors.accent.primary};
+    background: ${({ theme }) => `${theme.colors.accent.primary}16`};
+  }
+`
+
+export const RangeBadge = styled.span<{ $active?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid
+    ${({ $active, theme }) =>
+      $active ? `${theme.colors.accent.primary}AA` : theme.colors.borders.primary};
+  background: ${({ $active, theme }) =>
+    $active ? `${theme.colors.accent.primary}22` : theme.colors.background.secondary};
+  color: ${({ $active, theme }) =>
+    $active ? theme.colors.text.primary : theme.colors.text.secondary};
+  font-size: 11px;
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+`
+
+export const RangeSummaryChip = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  max-width: min(100%, 360px);
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid ${({ theme }) => theme.colors.borders.secondary};
+  background: ${({ theme }) => theme.colors.background.primary}66;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`
+
+export const RangeLabel = styled.span`
+  font-size: 11px;
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
+export const RangeInputGroup = styled.label`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 100%;
+`
+
+export const RangeInput = styled.input`
+  width: 100%;
+  min-height: 46px;
+  background-color: ${({ theme }) => theme.colors.background.primary};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  color: ${({ theme }) => theme.colors.text.primary};
+  padding: 10px 12px;
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  outline: none;
+
+  &:focus {
+    border-color: ${({ theme }) => theme.colors.accent.primary};
+  }
+`
+
+export const RangeInputStack = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 `
 
 export const ActionButton = styled.button<{
@@ -73,6 +205,7 @@ export const ActionButton = styled.button<{
   }};
   color: #fff;
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  min-height: 40px;
   padding: 6px 12px;
   border-radius: ${({ theme }) => theme.borderRadius.sm};
   font-size: ${({ theme }) => theme.typography.sizes.xs};
@@ -91,12 +224,120 @@ export const ActionButton = styled.button<{
   }
 `
 
+export const RangeActionButton = styled(ActionButton)`
+  min-height: 44px;
+  padding: 8px 14px;
+`
+
+export const RangeHint = styled.div<{ $tone?: 'default' | 'error' }>`
+  min-height: 18px;
+  font-size: 11px;
+  color: ${({ $tone, theme }) =>
+    $tone === 'error' ? theme.colors.status.alarm : theme.colors.text.secondary};
+`
+
+export const RangeDialog = styled.div`
+  width: min(92vw, 420px);
+  background: ${({ theme }) => theme.colors.background.secondary};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  border-radius: ${({ theme }) => theme.borderRadius.lg};
+  box-shadow: ${({ theme }) => theme.shadows.lg};
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  @media (max-width: 768px) {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    border-radius: 0;
+  }
+`
+
+export const RangeDialogHeader = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.borders.primary};
+`
+
+export const RangeDialogTitle = styled.h3`
+  margin: 0;
+  font-size: ${({ theme }) => theme.typography.sizes.sm};
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+`
+
+export const RangeDialogSubtitle = styled.p`
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
+export const RangeDialogClose = styled.button`
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background: transparent;
+  color: ${({ theme }) => theme.colors.text.secondary};
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+
+  &:hover {
+    color: ${({ theme }) => theme.colors.text.primary};
+    border-color: ${({ theme }) => theme.colors.accent.primary};
+  }
+`
+
+export const RangeDialogBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+`
+
+export const RangeDialogFooter = styled.div`
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 16px 16px;
+`
+
+export const RangeMetaRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+`
+
+export const RangeMetaText = styled.span`
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: ${({ theme }) => theme.colors.text.secondary};
+`
+
 export const ContentArea = styled.div`
   display: flex;
   flex-grow: 1;
   gap: 12px;
   min-height: 0;
   position: relative;
+
+  @media (max-width: 768px) {
+    display: block;
+    min-height: 0;
+  }
 `
 
 export const ChartSection = styled.div<{ $isShrunk?: boolean }>`
@@ -109,32 +350,93 @@ export const ChartSection = styled.div<{ $isShrunk?: boolean }>`
   flex-direction: column;
   transition: margin-right 0.3s ease-in-out;
   /* When shrunk, we add margin to the right to make space for the panel */
-  margin-right: ${({ $isShrunk }) => ($isShrunk ? '320px' : '0')};
+  margin-right: ${({ $isShrunk }) => ($isShrunk ? '336px' : '0')};
   position: relative;
+
+  @media (max-width: 768px) {
+    margin-right: 0;
+    padding: 12px;
+  }
 `
 
-export const LegendBox = styled.div`
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  background-color: ${({ theme }) => theme.colors.background.primary}E6; // 90% opacity
-  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
-  border-radius: ${({ theme }) => theme.borderRadius.md};
-  padding: 12px;
+export const ChartCanvasShell = styled.div`
+  position: relative;
+  flex: 1;
+  min-height: 0;
+`
+
+export const DualChartsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+`
+
+export const DualChartPanel = styled.div`
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: ${({ theme }) => theme.shadows.lg};
-  z-index: 10;
-  min-width: 180px;
-  pointer-events: none; // Allow clicking through to chart if needed, usually better to allow interaction if buttons inside
+  border-radius: ${({ theme }) => theme.borderRadius.lg};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background:
+    linear-gradient(
+      180deg,
+      ${({ theme }) => theme.colors.background.secondary}CC 0%,
+      ${({ theme }) => theme.colors.background.primary}E6 100%
+    );
+  box-shadow:
+    ${({ theme }) => theme.shadows.md},
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  overflow: hidden;
 `
 
-export const LegendItem = styled.div`
+export const DualChartHeader = styled.div`
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  align-items: center;
-  font-size: ${({ theme }) => theme.typography.sizes.xs};
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background:
+    linear-gradient(
+      180deg,
+      rgba(21, 35, 60, 0.92) 0%,
+      rgba(13, 24, 43, 0.72) 100%
+    );
+`
+
+export const DualChartTitle = styled.h3`
+  margin: 0;
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-family: ${({ theme }) => theme.typography.displayFamily};
+  font-size: ${({ theme }) => theme.typography.sizes.lg};
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+`
+
+export const DualChartMeta = styled.div`
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-size: 11px;
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+`
+
+export const DualChartBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
 `
 
 export const SidePanel = styled.div<{ $isOpen: boolean; $width?: string }>`
@@ -152,8 +454,21 @@ export const SidePanel = styled.div<{ $isOpen: boolean; $width?: string }>`
   transition: transform 0.3s ease-in-out;
   box-shadow: ${({ theme }) => theme.shadows.lg};
   z-index: 20;
-  padding: 16px;
+  padding: 14px;
   gap: 16px;
+
+  @media (max-width: 768px) {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+    transform: ${({ $isOpen }) => ($isOpen ? 'translateY(0)' : 'translateY(105%)')};
+    z-index: 120;
+  }
 `
 
 export const PanelHeader = styled.div`
@@ -236,8 +551,12 @@ export const ModalOverlay = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 100;
+  z-index: 260;
   animation: ${fadeIn} 0.2s ease-out;
+
+  @media (max-width: 768px) {
+    align-items: stretch;
+  }
 `
 
 export const ModalContent = styled.div`
@@ -250,6 +569,14 @@ export const ModalContent = styled.div`
   display: flex;
   flex-direction: column;
   box-shadow: ${({ theme }) => theme.shadows.lg};
+
+  @media (max-width: 768px) {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    min-height: 100dvh;
+    border-radius: 0;
+  }
 `
 
 export const ModalHeader = styled.div`
@@ -272,6 +599,13 @@ export const ModalHeader = styled.div`
 
 export const ModalBody = styled.div`
   padding: 24px;
+
+  @media (max-width: 768px) {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+  }
 `
 
 export const ModalFooter = styled.div`
@@ -281,6 +615,86 @@ export const ModalFooter = styled.div`
   justify-content: flex-end;
   background-color: ${({ theme }) => theme.colors.background.primary}80;
   border-radius: 0 0 ${({ theme }) => theme.borderRadius.lg} ${({ theme }) => theme.borderRadius.lg};
+`
+
+export const MobileActionGrid = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+`
+
+export const MobileActionCard = styled.button<{ $primary?: boolean }>`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-radius: ${({ theme }) => theme.borderRadius.lg};
+  border: 1px solid
+    ${({ $primary, theme }) =>
+      $primary ? `${theme.colors.accent.primary}` : `${theme.colors.borders.primary}`};
+  background:
+    radial-gradient(
+      circle at top right,
+      ${({ $primary }) => ($primary ? 'rgba(72, 191, 255, 0.16)' : 'transparent')} 0%,
+      transparent 42%
+    ),
+    linear-gradient(180deg, rgba(17, 28, 49, 0.98) 0%, rgba(10, 18, 33, 0.98) 100%);
+  color: ${({ theme }) => theme.colors.text.primary};
+  text-align: left;
+  box-shadow: ${({ theme }) => theme.shadows.md};
+  cursor: pointer;
+`
+
+export const MobileActionLabelStack = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+`
+
+export const MobileActionTitle = styled.div`
+  font-family: ${({ theme }) => theme.typography.displayFamily};
+  font-size: ${({ theme }) => theme.typography.sizes.lg};
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+`
+
+export const MobileActionMeta = styled.div`
+  color: ${({ theme }) => theme.colors.text.secondary};
+  font-size: ${({ theme }) => theme.typography.sizes.sm};
+  line-height: 1.45;
+`
+
+export const MobileTrendModalBody = styled.div`
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 8px;
+  padding: 12px 12px 16px;
+`
+
+export const MobileTrendToolbar = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`
+
+export const MobileTrendChartFrame = styled.div`
+  flex: 1;
+  min-height: 0;
+  border-radius: ${({ theme }) => theme.borderRadius.lg};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background:
+    linear-gradient(
+      180deg,
+      ${({ theme }) => theme.colors.background.secondary}CC 0%,
+      ${({ theme }) => theme.colors.background.primary}F0 100%
+    );
+  padding: 8px;
 `
 
 export const CategoryGrid = styled.div`
@@ -309,9 +723,9 @@ export const CategoryTitle = styled.h4`
 export const VariableButton = styled.button<{ $isSelected: boolean; $isDisabled: boolean }>`
   width: 100%;
   display: flex;
-  align-items: center;
-  padding: 14px 16px;
-  margin-bottom: 8px;
+  align-items: flex-start;
+  padding: 14px 10px;
+  margin-bottom: 0;
   border-radius: ${({ theme }) => theme.borderRadius.md};
   border: 1px solid
     ${({ $isSelected, theme }) =>
@@ -341,7 +755,7 @@ export const VariableButton = styled.button<{ $isSelected: boolean; $isDisabled:
   }
 
   span {
-    font-size: ${({ theme }) => theme.typography.sizes.sm};
+    font-size: ${({ theme }) => theme.typography.sizes.md};
     font-weight: ${({ theme }) => theme.typography.weights.bold};
     color: ${({ $isSelected, theme }) =>
       $isSelected ? theme.colors.text.primary : theme.colors.text.secondary};
@@ -364,7 +778,8 @@ export const CheckBox = styled.div<{ $isSelected: boolean }>`
       $isSelected ? theme.colors.accent.primary : theme.colors.text.disabled};
   background-color: ${({ $isSelected, theme }) =>
     $isSelected ? theme.colors.accent.primary : 'transparent'};
-  margin-right: 10px;
+  margin-right: 8px;
+  margin-top: 2px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -5,12 +5,14 @@ export const Container = styled.div`
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 `
 
 export const Toolbar = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 10px;
   border-radius: ${({ theme }) => theme.borderRadius.lg};
@@ -72,7 +74,7 @@ export const ToolButton = styled.button<{ $active?: boolean }>`
 
 export const PageIndicator = styled.button`
   height: 52px;
-  min-width: 140px;
+  min-width: 168px;
   padding: 0 16px;
   border-radius: ${({ theme }) => theme.borderRadius.md};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
@@ -98,11 +100,16 @@ export const PageIndicator = styled.button`
 
 export const Viewer = styled.div`
   flex: 1;
+  min-height: 0;
   border-radius: ${({ theme }) => theme.borderRadius.lg};
   border: 1px solid ${({ theme }) => theme.colors.borders.primary};
   background: ${({ theme }) => theme.colors.background.primary};
   overflow: auto;
-  padding: 12px;
+  padding: 8px 10px 10px;
+
+  .react-pdf__Document {
+    width: 100%;
+  }
 
   /* Custom Scrollbar */
   &::-webkit-scrollbar {
@@ -143,10 +150,20 @@ export const Viewer = styled.div`
   }
 `
 
-export const PageWrap = styled.div`
-  width: 100%;
+export const PageSpread = styled.div`
+  width: max-content;
+  min-width: 100%;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
+  gap: 24px;
+`
+
+export const PageWrap = styled.div`
+  width: auto;
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
 `
 
 export const InfoText = styled.div`

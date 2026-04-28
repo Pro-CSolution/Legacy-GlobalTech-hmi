@@ -1,6 +1,8 @@
+import { isViewOnlyAccessMode } from 'access/accessMode'
 import { apiService } from './index'
 
 const BASE = '/drive'
+const MONITOR_BASE = '/monitor/drive'
 
 export type FaultCodeType = 'Trip' | 'Warning' | string
 
@@ -25,9 +27,10 @@ export const getFaultCodes = async (opts?: { force?: boolean }): Promise<FaultCo
   const force = opts?.force === true
   if (!force && cacheList) return cacheList
   if (!force && inFlight) return inFlight
+  const base = isViewOnlyAccessMode() ? MONITOR_BASE : BASE
 
   inFlight = apiService
-    .get<FaultCodeEntry[]>(`${BASE}/fault-codes`)
+    .get<FaultCodeEntry[]>(`${base}/fault-codes`)
     .then((data) => {
       cacheList = Array.isArray(data) ? data : []
       cacheById = cacheList.reduce<Record<number, FaultCodeEntry>>((acc, item) => {

@@ -62,6 +62,7 @@ type ParameterEntry = {
   menu?: number
   description?: string
   alias?: string
+  address?: number
   range_numeric?: { min?: number; max?: number }
   attributes?: string[]
 }
@@ -71,7 +72,21 @@ const resolveBackendRoot = (): string => {
   if (envRoot && envRoot.trim().length > 0) {
     return path.isAbsolute(envRoot) ? envRoot : path.resolve(envRoot)
   }
-  return path.resolve(process.cwd(), '..', 'GlobalTech-Backend')
+
+  const candidateRoots = [
+    path.resolve(process.cwd(), '..', 'Legacy-GlobalTech-Backend'),
+    path.resolve(process.cwd(), '..', 'GlobalTech-Backend')
+  ]
+
+  const existingRoot = candidateRoots.find((candidate) =>
+    fs.existsSync(path.join(candidate, 'config', 'devices.yaml'))
+  )
+
+  if (existingRoot) {
+    return existingRoot
+  }
+
+  return candidateRoots[0]
 }
 
 const loadDevices = (devicesPath: string): DevicesFile => {
@@ -151,6 +166,7 @@ const main = (): void => {
         id: pid,
         alias: meta.alias,
         name: meta.name,
+        address: meta.address,
         unit: meta.unit,
         menu: meta.menu,
         description: meta.description,
@@ -190,6 +206,7 @@ const main = (): void => {
       props.push(`id: ${quoteString(pid)}`)
       if (meta.alias) props.push(`alias: ${quoteString(meta.alias)}`)
       if (meta.name) props.push(`name: ${quoteString(meta.name)}`)
+      if (meta.address !== undefined) props.push(`address: ${meta.address}`)
       if (meta.unit !== undefined && meta.unit !== null)
         props.push(`unit: ${quoteString(String(meta.unit))}`)
       if (meta.menu !== undefined) props.push(`menu: ${meta.menu}`)
@@ -234,6 +251,7 @@ export type ParameterMeta = {
   id: ParameterId
   alias?: string
   name?: string
+  address?: number
   unit?: string
   menu?: number
   description?: string

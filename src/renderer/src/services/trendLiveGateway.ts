@@ -1,5 +1,6 @@
 import { apiService, socketService, SOCKET_EVENTS } from './index'
-import { DeviceId, ParameterId } from '../types'
+import { isViewOnlyAccessMode } from 'access/accessMode'
+import { ParameterId } from '../types'
 
 export type TrendPoint = { time: string; value: number }
 export type TrendHistoryMeta = {
@@ -21,7 +22,7 @@ export type TrendSeriesResponse = {
 }
 
 export type FetchTrendHistoryParams = {
-  deviceId: DeviceId
+  deviceId: string
   parameterIds: ParameterId[]
   windowMinutes?: number
   startTime?: string
@@ -36,7 +37,7 @@ export type TrendUpdatePayload = {
 }
 
 // Mantiene las subscripciones activas para re-hacerlas automáticamente en reconnect.
-const trendSubscriptions = new Map<DeviceId, ParameterId[]>()
+const trendSubscriptions = new Map<string, ParameterId[]>()
 let trendReplayBound = false
 
 const bindTrendReplay = (): void => {
@@ -73,8 +74,9 @@ export async function fetchTrendHistory({
   // `/trend/history` puede ser pesado con ventanas grandes (p.ej. 3h) y múltiples parámetros.
   // Devolvemos un timeout específico para no chocar con el TIMEOUT global (5s).
   const requestTimeoutMs = 30_000
+  const base = isViewOnlyAccessMode() ? '/monitor/trend/history' : '/trend/history'
   return apiService.get<TrendSeriesResponse>(
-    '/trend/history',
+    base,
     {
       device_id: deviceId,
       parameter_ids: parameterIds,
@@ -93,7 +95,7 @@ export function ensureTrendSocket() {
   }
 }
 
-export function subscribeTrend(deviceId: DeviceId, parameterIds: ParameterId[]): void {
+export function subscribeTrend(deviceId: string, parameterIds: ParameterId[]): void {
   if (!deviceId || !parameterIds.length) return
 
   const uniqueParameterIds = Array.from(new Set(parameterIds.filter(Boolean))) as ParameterId[]
@@ -109,7 +111,7 @@ export function subscribeTrend(deviceId: DeviceId, parameterIds: ParameterId[]):
   }
 }
 
-export function unsubscribeTrend(deviceId: DeviceId): void {
+export function unsubscribeTrend(deviceId: string): void {
   if (!deviceId) return
 
   trendSubscriptions.delete(deviceId)
