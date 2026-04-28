@@ -169,8 +169,8 @@ const createEmptyValueStore = (): DirectReadValueStore => ({
 })
 
 const WAGO_LIVE_POLL_MS = 1000
-const WAGO_COIL_MODBUS_BASE = 30511
 const WAGO_ANALOG_OUTPUT_ADDRESS_BASE = 512
+const WAGO_DIGITAL_OUTPUT_STATUS_ADDRESS_BASE = 512
 const SHOW_UNMAPPED_RACK_LABEL = false
 const IO_CARD_GROUP_ORDER: ReadonlyArray<WagoMonitorGroupLabel> = [
   'Analog Input',
@@ -325,10 +325,13 @@ const formatIoCardSlotLabel = (code: string, signalIndex: number): string =>
 const formatDigitalOutputReadAddressLabel = (address: number): string =>
   `Read addr: DO ${formatSignalIndex(address)}`
 
-const getRowSourceAddress = (entry: WagoSpreadsheetRow): number =>
-  entry.sourceRegisterType === 'coil'
-    ? entry.modbusRegister - WAGO_COIL_MODBUS_BASE
-    : entry.sourceOffset
+const getRowSourceAddress = (entry: WagoSpreadsheetRow): number => {
+  if (entry.sourceRegisterType === 'coil') {
+    return WAGO_DIGITAL_OUTPUT_STATUS_ADDRESS_BASE + entry.sourceOffset
+  }
+
+  return entry.sourceOffset
+}
 
 const getRowInlineForceMode = (entry: WagoSpreadsheetRow): WagoInlineForceMode => {
   if (entry.sourceRegisterType === 'coil') {
@@ -495,8 +498,9 @@ export const WagoLivePanel = ({ embedded = false, active = true }: WagoLivePanel
     }
 
     spreadsheetRows.forEach((entry) => {
-      if (!grouped[entry.sourceRegisterType].includes(entry.modbusRegister)) {
-        grouped[entry.sourceRegisterType].push(entry.modbusRegister)
+      const sourceAddress = getRowSourceAddress(entry)
+      if (!grouped[entry.sourceRegisterType].includes(sourceAddress)) {
+        grouped[entry.sourceRegisterType].push(sourceAddress)
       }
     })
 
