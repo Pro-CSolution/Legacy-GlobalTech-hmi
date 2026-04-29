@@ -58,7 +58,7 @@ export const ToolbarActions = styled.div`
 
 export const ButtonGroup = styled.div`
   display: flex;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
 `
 
@@ -69,7 +69,7 @@ export const TimeButton = styled.button<{ $isActive?: boolean }>`
   border: 1px solid
     ${({ $isActive, theme }) => ($isActive ? theme.colors.accent.primary : 'transparent')};
   min-height: 40px;
-  padding: 0 14px;
+  padding: 0 18px;
   border-radius: ${({ theme }) => theme.borderRadius.sm};
   font-size: ${({ theme }) => theme.typography.sizes.xs};
   font-weight: ${({ theme }) => theme.typography.weights.bold};
@@ -419,6 +419,7 @@ export const DualChartsGrid = styled.div`
 `
 
 export const DualChartPanel = styled.div`
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -451,6 +452,20 @@ export const DualChartHeader = styled.div`
     );
 `
 
+export const DualChartHeaderInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+`
+
+export const DualChartHeaderActions = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+`
+
 export const DualChartTitle = styled.h3`
   margin: 0;
   color: ${({ theme }) => theme.colors.text.primary};
@@ -468,6 +483,33 @@ export const DualChartMeta = styled.div`
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+`
+
+export const DualChartExpandButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: ${({ theme }) => theme.borderRadius.sm};
+  border: 1px solid ${({ theme }) => theme.colors.borders.primary};
+  background: ${({ theme }) => `${theme.colors.background.primary}CC`};
+  color: ${({ theme }) => theme.colors.text.primary};
+  font-size: 10px;
+  font-weight: ${({ theme }) => theme.typography.weights.bold};
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.15s ease;
+
+  &:hover {
+    border-color: ${({ theme }) => theme.colors.accent.primary};
+    background: ${({ theme }) => `${theme.colors.accent.primary}18`};
+    transform: translateY(-1px);
+  }
 `
 
 export const DualChartBody = styled.div`

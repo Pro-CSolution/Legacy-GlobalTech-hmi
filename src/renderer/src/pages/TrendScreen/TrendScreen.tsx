@@ -6,6 +6,8 @@ import {
   ChevronRight,
   Filter,
   Mail,
+  Maximize2,
+  Minimize2,
   SlidersHorizontal,
   X,
   ZoomOut
@@ -22,6 +24,7 @@ import type {
 } from 'services'
 import { runReportSend } from 'hooks/useReportSendStatus'
 import { useMotorControlModePreference } from 'hooks/useMotorControlModePreference'
+import { usePreferredSingleMotorScope } from 'hooks/usePreferredSingleMotorScope'
 import {
   useAccessMode,
   useIsViewportBelow,
@@ -55,6 +58,7 @@ import {
 } from './constants'
 import { useTrendScreenState } from './hooks/useTrendScreenState'
 import * as S from './TrendScreen.styles'
+import type { CurrentValueItem } from './types'
 
 type ImageMimeType = 'image/png' | 'image/jpeg'
 
@@ -100,6 +104,22 @@ const formatEpochSecondsForSpan = (seconds: number, spanSec: number): string => 
     month: 'short',
     day: 'numeric'
   })
+}
+
+const getXAxisTickStepSeconds = (
+  spanSec: number,
+  { isDualMotorMode }: { isDualMotorMode: boolean }
+): number | undefined => {
+  if (!Number.isFinite(spanSec) || spanSec <= 0) return undefined
+  if (spanSec <= 5 * 60) return isDualMotorMode ? 60 : 30
+  if (spanSec <= 15 * 60) return isDualMotorMode ? 2 * 60 : 60
+  if (spanSec <= 30 * 60) return isDualMotorMode ? 5 * 60 : 2 * 60
+  if (spanSec <= 60 * 60) return isDualMotorMode ? 10 * 60 : 5 * 60
+  if (spanSec <= 3 * 60 * 60) return isDualMotorMode ? 30 * 60 : 15 * 60
+  if (spanSec <= 6 * 60 * 60) return 30 * 60
+  if (spanSec <= 12 * 60 * 60) return 60 * 60
+  if (spanSec <= 24 * 60 * 60) return 2 * 60 * 60
+  return 6 * 60 * 60
 }
 
 const computePaddedYRange = (
@@ -154,6 +174,11 @@ type ReportReadyDataset = Dataset & {
 type RecordedSensorDataset = Dataset & {
   parameterId: TrendVariableId
   scope: 1 | 2
+}
+
+type EpochDomain = {
+  min: number
+  max: number
 }
 
 const getFastApiErrorDetail = (error: unknown): string | null => {
@@ -275,8 +300,8 @@ const decorateRecordedSensorDatasets = (
 
     const baseLabel = getTrendVariableLabel(dataset.parameterId, displayNameOverrides)
 
-    return {
-      ...dataset,
+  return {
+    ...dataset,
       data: adjustedData,
       label: labelPrefix ? `${labelPrefix} - ${baseLabel}` : baseLabel,
       unit: meta
@@ -293,11 +318,74 @@ const decorateRecordedSensorDatasets = (
     }
   })
 
+const domainsAreEqual = (left: EpochDomain | null, right: EpochDomain | null): boolean => {
+  if (!left && !right) return true
+  if (!left || !right) return false
+
+  return left.min === right.min && left.max === right.max
+}
+
+const buildRecordingDisplayDomain = ({
+  sessionDomain,
+  rangeMode,
+  effectiveTimeRange,
+  activeCustomRange
+}: {
+  sessionDomain: EpochDomain | null
+  rangeMode: 'relative' | 'absolute'
+  effectiveTimeRange: number
+  activeCustomRange:
+    | {
+        startDate: Date
+        endDate: Date
+      }
+    | null
+    | undefined
+}): EpochDomain | null => {
+  if (!sessionDomain) {
+    return sessionDomain
+  }
+
+  if (rangeMode === 'absolute' && activeCustomRange) {
+    const requestedMin = activeCustomRange.startDate.getTime() / 1000
+    const requestedMax = activeCustomRange.endDate.getTime() / 1000
+
+    if (Number.isFinite(requestedMin) && Number.isFinite(requestedMax) && requestedMax > requestedMin) {
+      return { min: requestedMin, max: requestedMax }
+    }
+  }
+
+  const spanSec = Math.max(effectiveTimeRange * 60, 60)
+  const max = sessionDomain.max
+  const min = max - spanSec
+
+  return Number.isFinite(max) && Number.isFinite(min) && max > min ? { min, max } : sessionDomain
+}
+
+const buildCurrentValueItems = (datasets: Dataset[]): CurrentValueItem[] =>
+  datasets.map((dataset) => ({
+    id:
+      dataset.label ||
+      ('parameterId' in dataset && typeof dataset.parameterId === 'string'
+        ? dataset.parameterId
+        : 'manual'),
+    label:
+      dataset.label ||
+      ('parameterId' in dataset && typeof dataset.parameterId === 'string'
+        ? dataset.parameterId
+        : 'manual'),
+    color: dataset.borderColor,
+    value: dataset.data.length > 0 ? dataset.data[dataset.data.length - 1].y : 0,
+    unit: dataset.unit ?? null,
+    isManual: dataset.isManual === true
+  }))
+
 const TrendScreen = () => {
   void useTheme()
   const { isViewOnly } = useAccessMode()
   const isMobileViewOnly = isViewOnly && useIsViewportBelow(768)
   const [motorControlMode] = useMotorControlModePreference()
+  const singleMotorScope = usePreferredSingleMotorScope()
   const [temperatureUnit] = useTemperatureUnitPreference()
   const displayNameOverrides = useWagoDisplayNameOverrides()
   const perfEnabled = isDebugEnabled('trend.perf')
@@ -308,6 +396,7 @@ const TrendScreen = () => {
     customRangeDraft,
     customRangeError,
     activeRangeSummary,
+    activeCustomRange,
     canApplyCustomRange,
     maxRangeDateTime,
     setTimeRange,
@@ -380,11 +469,19 @@ const TrendScreen = () => {
     status: recordingStatus,
     startedAt: recordingStartedAt,
     stoppedAt: recordingStoppedAt,
+    liveXDomain,
     hasRecordedSession,
     hasRecordedPoints,
+    hasLivePoints,
     setTrackedSensorIds,
     startRecording,
     stopRecording,
+    liveMotorOneDatasets,
+    liveMotorTwoDatasets,
+    liveMotorOneDatasetsAll,
+    liveMotorTwoDatasetsAll,
+    motorOneDatasets,
+    motorTwoDatasets,
     motorOneDatasetsAll,
     motorTwoDatasetsAll
   } = useTrendRecording()
@@ -398,6 +495,7 @@ const TrendScreen = () => {
   const [isCurrentValuesOpen, setIsCurrentValuesOpen] = useState(false)
   const [isRangeDialogOpen, setIsRangeDialogOpen] = useState(false)
   const [mobileTrendScope, setMobileTrendScope] = useState<1 | 2 | 'single' | null>(null)
+  const [expandedDualMotorScope, setExpandedDualMotorScope] = useState<1 | 2 | null>(null)
   const exportResolveRef = useRef<((value: string | null) => void) | null>(null)
   const renderStartRef = useRef<number>(perfNow())
   renderStartRef.current = perfNow()
@@ -420,6 +518,26 @@ const TrendScreen = () => {
     startRecording(selectedVarIds)
     setZoomXDomain(null)
   }, [recordingStatus, selectedVarIds, startRecording, stopRecording])
+
+  const recordedMotorOneDatasets = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(motorOneDatasets, {
+        displayNameOverrides,
+        temperatureUnit,
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, motorOneDatasets, temperatureUnit]
+  )
+
+  const recordedMotorTwoDatasets = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(motorTwoDatasets, {
+        displayNameOverrides,
+        temperatureUnit,
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, motorTwoDatasets, temperatureUnit]
+  )
 
   const recordedMotorOneDatasetsAll = useMemo(
     () =>
@@ -445,35 +563,171 @@ const TrendScreen = () => {
 
   const showRecordedSession = hasRecordedSession
   const isRecordingActive = recordingStatus === 'recording'
+  const showPersistentLiveChart = hasLivePoints && Boolean(liveXDomain)
 
-  // Keep the on-screen charts on the live-preview pipeline so the trend never
-  // blanks on start and resumes live movement immediately after stop.
-  const motorOneCombinedDatasets = previewMotorOneCombinedDatasets
-  const motorTwoCombinedDatasets = previewMotorTwoCombinedDatasets
-  const combinedDatasets = previewCombinedDatasets
-  const combinedXDomain = previewCombinedXDomain
-  const currentValues = previewCurrentValues
-  const currentValuesByMotor = previewCurrentValuesByMotor
+  const liveMotorOneDecoratedDatasets = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(liveMotorOneDatasets, {
+        displayNameOverrides,
+        temperatureUnit,
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, liveMotorOneDatasets, temperatureUnit]
+  )
+
+  const liveMotorTwoDecoratedDatasets = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(liveMotorTwoDatasets, {
+        displayNameOverrides,
+        temperatureUnit,
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, liveMotorTwoDatasets, temperatureUnit]
+  )
+
+  const liveMotorOneDecoratedDatasetsAll = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(liveMotorOneDatasetsAll, {
+        displayNameOverrides,
+        temperatureUnit,
+        labelPrefix: 'Motor #1',
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, liveMotorOneDatasetsAll, temperatureUnit]
+  )
+
+  const liveMotorTwoDecoratedDatasetsAll = useMemo(
+    () =>
+      decorateRecordedSensorDatasets(liveMotorTwoDatasetsAll, {
+        displayNameOverrides,
+        temperatureUnit,
+        labelPrefix: 'Motor #2',
+        getEffectiveSensorColor
+      }),
+    [displayNameOverrides, getEffectiveSensorColor, liveMotorTwoDatasetsAll, temperatureUnit]
+  )
+
+  const motorOneCombinedDatasets = useMemo(
+    () =>
+      showPersistentLiveChart
+        ? [...liveMotorOneDecoratedDatasets, ...previewManualDatasets]
+        : previewMotorOneCombinedDatasets,
+    [
+      liveMotorOneDecoratedDatasets,
+      previewManualDatasets,
+      previewMotorOneCombinedDatasets,
+      showPersistentLiveChart
+    ]
+  )
+
+  const motorTwoCombinedDatasets = useMemo(
+    () =>
+      showPersistentLiveChart
+        ? [...liveMotorTwoDecoratedDatasets, ...previewManualDatasets]
+        : previewMotorTwoCombinedDatasets,
+    [
+      liveMotorTwoDecoratedDatasets,
+      previewManualDatasets,
+      previewMotorTwoCombinedDatasets,
+      showPersistentLiveChart
+    ]
+  )
+
+  const combinedDatasets = useMemo(
+    () =>
+      showPersistentLiveChart
+        ? isDualMotorMode
+          ? [
+              ...liveMotorOneDecoratedDatasetsAll,
+              ...liveMotorTwoDecoratedDatasetsAll,
+              ...previewManualDatasets
+            ]
+          : singleMotorScope === 2
+            ? motorTwoCombinedDatasets
+            : motorOneCombinedDatasets
+        : previewCombinedDatasets,
+    [
+      isDualMotorMode,
+      liveMotorOneDecoratedDatasetsAll,
+      liveMotorTwoDecoratedDatasetsAll,
+      motorOneCombinedDatasets,
+      motorTwoCombinedDatasets,
+      previewCombinedDatasets,
+      previewManualDatasets,
+      showPersistentLiveChart,
+      singleMotorScope
+    ]
+  )
+
+  const chartDefaultXDomain = useMemo(
+    () =>
+      showPersistentLiveChart
+        ? buildRecordingDisplayDomain({
+            sessionDomain: liveXDomain,
+            rangeMode,
+            effectiveTimeRange,
+            activeCustomRange
+          })
+        : previewCombinedXDomain,
+    [activeCustomRange, effectiveTimeRange, liveXDomain, previewCombinedXDomain, rangeMode, showPersistentLiveChart]
+  )
+
+  const chartFullXDomain = useMemo(
+    () => (showPersistentLiveChart ? chartDefaultXDomain ?? liveXDomain : previewCombinedXDomain),
+    [chartDefaultXDomain, liveXDomain, previewCombinedXDomain, showPersistentLiveChart]
+  )
+
+  const navigatorValue = useMemo(() => {
+    if (zoomXDomain) return zoomXDomain
+    if (!showPersistentLiveChart) return null
+    return domainsAreEqual(chartDefaultXDomain, chartFullXDomain) ? null : chartDefaultXDomain
+  }, [chartDefaultXDomain, chartFullXDomain, showPersistentLiveChart, zoomXDomain])
+
+  const currentValues = useMemo(
+    () => (showPersistentLiveChart ? buildCurrentValueItems(combinedDatasets) : previewCurrentValues),
+    [combinedDatasets, previewCurrentValues, showPersistentLiveChart]
+  )
+
+  const currentValuesByMotor = useMemo(
+    () =>
+      showPersistentLiveChart
+        ? {
+            1: buildCurrentValueItems(motorOneCombinedDatasets),
+            2: buildCurrentValueItems(motorTwoCombinedDatasets)
+          }
+        : previewCurrentValuesByMotor,
+    [
+      motorOneCombinedDatasets,
+      motorTwoCombinedDatasets,
+      previewCurrentValuesByMotor,
+      showPersistentLiveChart
+    ]
+  )
 
   const reportDatasets = useMemo<ReportReadyDataset[]>(
     () =>
       showRecordedSession
-        ? [...recordedMotorOneDatasetsAll, ...recordedMotorTwoDatasetsAll, ...previewManualDatasets]
+        ? isDualMotorMode
+          ? [...recordedMotorOneDatasetsAll, ...recordedMotorTwoDatasetsAll, ...previewManualDatasets]
+          : singleMotorScope === 2
+            ? [...recordedMotorTwoDatasets, ...previewManualDatasets]
+            : [...recordedMotorOneDatasets, ...previewManualDatasets]
         : (combinedDatasets as ReportReadyDataset[]),
     [
       combinedDatasets,
+      isDualMotorMode,
       previewManualDatasets,
+      recordedMotorOneDatasets,
       recordedMotorOneDatasetsAll,
+      recordedMotorTwoDatasets,
       recordedMotorTwoDatasetsAll,
-      showRecordedSession
+      showRecordedSession,
+      singleMotorScope
     ]
   )
   const reportIsDual = useMemo(
-    () =>
-      showRecordedSession
-        ? recordedMotorTwoDatasetsAll.some((dataset) => dataset.data.length > 0)
-        : isDualMotorMode,
-    [isDualMotorMode, recordedMotorTwoDatasetsAll, showRecordedSession]
+    () => isDualMotorMode,
+    [isDualMotorMode]
   )
 
   const recordingStatusTone = showRecordedSession
@@ -577,11 +831,11 @@ const TrendScreen = () => {
         total: selectedCount
       },
       datasets: combinedDatasets.length,
-      xDomain: combinedXDomain
+      xDomain: chartDefaultXDomain
         ? {
-            min: combinedXDomain.min,
-            max: combinedXDomain.max,
-            spanSec: combinedXDomain.max - combinedXDomain.min
+            min: chartDefaultXDomain.min,
+            max: chartDefaultXDomain.max,
+            spanSec: chartDefaultXDomain.max - chartDefaultXDomain.min
           }
         : null
     })
@@ -594,11 +848,11 @@ const TrendScreen = () => {
     selectedManualIds.length,
     selectedCount,
     combinedDatasets.length,
-    combinedXDomain
+    chartDefaultXDomain
   ])
 
   useEffect(() => {
-    if (!combinedXDomain) {
+    if (!chartFullXDomain) {
       setZoomXDomain(null)
       return
     }
@@ -606,18 +860,18 @@ const TrendScreen = () => {
     setZoomXDomain((prev) => {
       if (!prev) return prev
 
-      const min = Math.max(prev.min, combinedXDomain.min)
-      const max = Math.min(prev.max, combinedXDomain.max)
+      const min = Math.max(prev.min, chartFullXDomain.min)
+      const max = Math.min(prev.max, chartFullXDomain.max)
       if (!(max > min)) return null
       if (min === prev.min && max === prev.max) return prev
 
       return { min, max }
     })
-  }, [combinedXDomain])
+  }, [chartFullXDomain])
 
   const effectiveXDomain = useMemo(
-    () => zoomXDomain ?? combinedXDomain,
-    [zoomXDomain, combinedXDomain]
+    () => zoomXDomain ?? chartDefaultXDomain,
+    [zoomXDomain, chartDefaultXDomain]
   )
 
   const formatXAxisTick = useCallback(
@@ -722,21 +976,46 @@ const TrendScreen = () => {
     setMobileTrendScope(null)
   }, [isMobileViewOnly])
 
+  useEffect(() => {
+    if (isDualMotorMode) return
+    setExpandedDualMotorScope(null)
+  }, [isDualMotorMode])
+
+  const handleToggleDualMotorExpansion = useCallback((scope: 1 | 2) => {
+    setExpandedDualMotorScope((prev) => (prev === scope ? null : scope))
+  }, [])
+
   const chartScales = useMemo(
-    () => ({
-      x: {
-        min: effectiveXDomain?.min,
-        max: effectiveXDomain?.max,
-        ticks: {
-          callback: formatXAxisTick
+    () => {
+      const xSpanSec =
+        effectiveXDomain && Number.isFinite(effectiveXDomain.max - effectiveXDomain.min)
+          ? Math.max(effectiveXDomain.max - effectiveXDomain.min, 60)
+          : Math.max(effectiveTimeRange * 60, 60)
+
+      return {
+        x: {
+          min: effectiveXDomain?.min,
+          max: effectiveXDomain?.max,
+          ticks: {
+            callback: formatXAxisTick,
+            space: isDualMotorMode ? 125 : 95,
+            stepSec: getXAxisTickStepSeconds(xSpanSec, { isDualMotorMode })
+          }
+        },
+        y: {
+          min: resolvedYAxisScale?.min,
+          max: resolvedYAxisScale?.max
         }
-      },
-      y: {
-        min: resolvedYAxisScale?.min,
-        max: resolvedYAxisScale?.max
       }
-    }),
-    [effectiveXDomain?.min, effectiveXDomain?.max, formatXAxisTick, resolvedYAxisScale]
+    },
+    [
+      effectiveTimeRange,
+      effectiveXDomain?.max,
+      effectiveXDomain?.min,
+      formatXAxisTick,
+      isDualMotorMode,
+      resolvedYAxisScale
+    ]
   )
 
   const activeMobileTrend = useMemo(() => {
@@ -799,10 +1078,10 @@ const TrendScreen = () => {
       selectedCount,
       datasets: combinedDatasets.length,
       totalPoints,
-      xDomain: combinedXDomain,
+      xDomain: chartDefaultXDomain,
       pointsPerSeries
     })
-  }, [perfEnabled, selectedCount, combinedDatasets, combinedXDomain])
+  }, [perfEnabled, selectedCount, combinedDatasets, chartDefaultXDomain])
 
   useEffect(() => {
     if (!exportRequest) return
@@ -958,7 +1237,11 @@ const TrendScreen = () => {
           : [
               buildWorkbookSheet(
                 'Trend Report',
-                [...recordedMotorOneDatasetsAll, ...previewManualDatasets] as ReportReadyDataset[],
+                (
+                  singleMotorScope === 2
+                    ? [...recordedMotorTwoDatasets, ...previewManualDatasets]
+                    : [...recordedMotorOneDatasets, ...previewManualDatasets]
+                ) as ReportReadyDataset[],
                 startSec,
                 endSec
               )
@@ -1121,6 +1404,7 @@ const TrendScreen = () => {
     previewManualDatasets,
     privateMode,
     recordedMotorOneDatasetsAll,
+    recordedMotorTwoDatasets,
     recordedMotorTwoDatasetsAll,
     recordingStartedAt,
     recordingStoppedAt,
@@ -1131,6 +1415,7 @@ const TrendScreen = () => {
     resolvedYAxisScale,
     setIsSending,
     showRecordedSession,
+    singleMotorScope,
     zoomXDomain,
   ])
 
@@ -1209,6 +1494,59 @@ const TrendScreen = () => {
       </S.ChartCanvasShell>
     )
   }
+
+  const renderDesktopDualMotorPanel = useCallback(
+    ({
+      chartId,
+      scope,
+      title,
+      datasets,
+      exportTarget = false,
+      panelLabel
+    }: {
+      chartId: string
+      scope: 1 | 2
+      title: string
+      datasets: Dataset[]
+      exportTarget?: boolean
+      panelLabel?: string
+    }) => {
+      const isExpanded = expandedDualMotorScope === scope
+
+      return (
+        <S.DualChartPanel key={scope}>
+          <S.DualChartHeader>
+            <S.DualChartHeaderInfo>
+              <S.DualChartTitle>{title}</S.DualChartTitle>
+              <S.DualChartMeta>
+                {selectedCount > 0 ? `${selectedCount} series selected` : 'No series selected'}
+              </S.DualChartMeta>
+            </S.DualChartHeaderInfo>
+
+            <S.DualChartHeaderActions>
+              <S.DualChartExpandButton
+                type="button"
+                onClick={() => handleToggleDualMotorExpansion(scope)}
+              >
+                {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
+              </S.DualChartExpandButton>
+            </S.DualChartHeaderActions>
+          </S.DualChartHeader>
+
+          <S.DualChartBody>
+            {renderTrendChartCanvas(chartId, datasets, exportTarget, panelLabel)}
+          </S.DualChartBody>
+        </S.DualChartPanel>
+      )
+    },
+    [
+      expandedDualMotorScope,
+      handleToggleDualMotorExpansion,
+      renderTrendChartCanvas,
+      selectedCount
+    ]
+  )
 
   return (
     <ScreenLayout>
@@ -1396,46 +1734,43 @@ const TrendScreen = () => {
 
                 <TrendRangeNavigator
                   datasets={combinedDatasets}
-                  fullDomain={combinedXDomain}
-                  value={zoomXDomain}
+                  fullDomain={chartFullXDomain}
+                  value={navigatorValue}
                   onChange={setZoomXDomain}
                 />
 
                 {isDualMotorMode ? (
-                  <S.DualChartsGrid>
-                    <S.DualChartPanel>
-                      <S.DualChartHeader>
-                        <S.DualChartTitle>Motor #2</S.DualChartTitle>
-                        <S.DualChartMeta>
-                          {selectedCount > 0
-                            ? `${selectedCount} series selected`
-                            : 'No series selected'}
-                        </S.DualChartMeta>
-                      </S.DualChartHeader>
-                      <S.DualChartBody>
-                        {renderTrendChartCanvas('TrendChartMotor2', motorTwoCombinedDatasets)}
-                      </S.DualChartBody>
-                    </S.DualChartPanel>
-
-                    <S.DualChartPanel>
-                      <S.DualChartHeader>
-                        <S.DualChartTitle>Motor #1</S.DualChartTitle>
-                        <S.DualChartMeta>
-                          {selectedCount > 0
-                            ? `${selectedCount} series selected`
-                            : 'No series selected'}
-                        </S.DualChartMeta>
-                      </S.DualChartHeader>
-                      <S.DualChartBody>
-                        {renderTrendChartCanvas(
-                          'TrendChartMotor1',
-                          motorOneCombinedDatasets,
-                          true,
-                          'ZOOM'
-                        )}
-                      </S.DualChartBody>
-                    </S.DualChartPanel>
-                  </S.DualChartsGrid>
+                  expandedDualMotorScope ? (
+                    renderDesktopDualMotorPanel({
+                      chartId:
+                        expandedDualMotorScope === 2 ? 'TrendChartMotor2Expanded' : 'TrendChartMotor1Expanded',
+                      scope: expandedDualMotorScope,
+                      title: expandedDualMotorScope === 2 ? 'Motor #2' : 'Motor #1',
+                      datasets:
+                        expandedDualMotorScope === 2
+                          ? motorTwoCombinedDatasets
+                          : motorOneCombinedDatasets,
+                      exportTarget: expandedDualMotorScope === 1,
+                      panelLabel: expandedDualMotorScope === 1 ? 'ZOOM' : undefined
+                    })
+                  ) : (
+                    <S.DualChartsGrid>
+                      {renderDesktopDualMotorPanel({
+                        chartId: 'TrendChartMotor2',
+                        scope: 2,
+                        title: 'Motor #2',
+                        datasets: motorTwoCombinedDatasets
+                      })}
+                      {renderDesktopDualMotorPanel({
+                        chartId: 'TrendChartMotor1',
+                        scope: 1,
+                        title: 'Motor #1',
+                        datasets: motorOneCombinedDatasets,
+                        exportTarget: true,
+                        panelLabel: 'ZOOM'
+                      })}
+                    </S.DualChartsGrid>
+                  )
                 ) : (
                   renderTrendChartCanvas('TrendChart', combinedDatasets, true)
                 )}
